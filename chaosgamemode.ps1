@@ -87,7 +87,8 @@ $Script:CachedServices = @()
 # --- FUNCIONES AUXILIARES ----------------------------------------------------
 
 function Clear-Screen {
-    [System.Console]::Clear()
+    try { [System.Console]::Clear() }
+    catch { Clear-Host }
 }
 
 function Write-HR {
@@ -351,13 +352,16 @@ function Invoke-ChaosStatus {
             $data = $entry.Value
             $pctOfTotal = [math]::Round(($data.MB / $totalWaste) * 100, 0)
             $barLen = [math]::Max(1, [math]::Min(30, [math]::Round($data.MB / $totalWaste * 30)))
-            $bar = ([char]0x2588) * $barLen + ([char]0x2591) * (30 - $barLen)
+            $charFull = "$([char]0x2588)"
+            $charEmpty = "$([char]0x2591)"
+            $bar = ($charFull * $barLen) + ($charEmpty * (30 - $barLen))
 
             if ($data.MB -ge 500) { $barColor = 'Red' }
             elseif ($data.MB -ge 200) { $barColor = 'Yellow' }
             else { $barColor = 'DarkGray' }
 
-            Write-Host "   $([math]::Max(1,$name.Substring(0,[math]::Min($name.Length,20))).PadRight(20)) " -NoNewline -ForegroundColor DarkGray
+            $truncated = if ($name.Length -gt 20) { $name.Substring(0, 20) } else { $name }
+            Write-Host "   $($truncated.PadRight(20)) " -NoNewline -ForegroundColor DarkGray
             Write-Host "$([math]::Round($data.MB,0)) MB".PadLeft(8) -NoNewline -ForegroundColor $barColor
             Write-Host (" $($data.Count)x") -NoNewline -ForegroundColor DarkGray
             Write-Host "  $bar" -NoNewline -ForegroundColor $barColor
