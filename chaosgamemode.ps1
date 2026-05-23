@@ -1,19 +1,43 @@
 #=============================================================================
-# CHAOS GAME MODE
+# CHAOS GAME MODE  v2.0
 # Optimización extrema para gaming en Windows
-#
-# Sistema objetivo: Ryzen 5 5500 | RX 550 | 16GB RAM | Windows 11 Pro
-# Autor: Generado con OpenCode
+# Ryzen 5 5500 | RX 550 | 16GB RAM | Windows 11 Pro
 #=============================================================================
 
 param(
-    [Parameter(Mandatory = $true, Position = 0)]
+    [Parameter(Mandatory = $false, Position = 0)]
     [ValidateSet("on", "off", "status")]
     [string]$State
 )
 
-# --- CONFIGURACIÓN -----------------------------------------------------------
+# --- ICONOS (Nerd Fonts) -----------------------------------------------------
+$I = @{
+    On   = ""
+    Off  = ""
+    TUI  = ""
+    Exit = ""
+    CPU  = ""
+    RAM  = ""
+    HDD  = ""
+    Net  = ""
+    Stm  = ""
+    Web  = ""
+    Game = ""
+    Warn = ""
+    OK   = ""
+    Svc  = ""
+    Gear = ""
+    User = ""
+    Dir  = ""
+    Rstr = ""
+    Src  = ""
+    Pwr  = ""
+    Batt = ""
+    Chk  = ""
+    Fw   = ""
+}
 
+# --- CONFIGURACIÓN -----------------------------------------------------------
 $KillList = @(
     'chrome*', 'msedge*', 'firefox*', 'opera*', 'brave*', 'vivaldi*'
     'dropbox*', 'googledrive*', 'gdrive*', 'onedrive*', 'filecoauth'
@@ -39,15 +63,15 @@ $KillList = @(
 )
 
 $ServicesToStop = @(
-    @{ Name = 'SysMain';          Display = 'SysMain (Superfetch)' }
-    @{ Name = 'WSearch';          Display = 'Windows Search' }
-    @{ Name = 'DiagTrack';        Display = 'Telemetria (DiagTrack)' }
-    @{ Name = 'Spooler';          Display = 'Print Spooler' }
-    @{ Name = 'FontCache';        Display = 'Font Cache' }
-    @{ Name = 'PcaSvc';           Display = 'Program Compatibility Assistant' }
-    @{ Name = 'UsoSvc';           Display = 'Update Orchestrator' }
-    @{ Name = 'Themes';           Display = 'Themes' }
-    @{ Name = 'WpnService';       Display = 'Push Notifications' }
+    @{ Name = 'SysMain';          Icon = ''; Display = 'SysMain (Superfetch)' }
+    @{ Name = 'WSearch';          Icon = ''; Display = 'Windows Search' }
+    @{ Name = 'DiagTrack';        Icon = ''; Display = 'Telemetria (DiagTrack)' }
+    @{ Name = 'Spooler';          Icon = ''; Display = 'Print Spooler' }
+    @{ Name = 'FontCache';        Icon = ''; Display = 'Font Cache' }
+    @{ Name = 'PcaSvc';           Icon = ''; Display = 'Compat. Assistant' }
+    @{ Name = 'UsoSvc';           Icon = ''; Display = 'Update Orchestrator' }
+    @{ Name = 'Themes';           Icon = ''; Display = 'Themes' }
+    @{ Name = 'WpnService';       Icon = ''; Display = 'Push Notifications' }
 )
 
 $HighPerfGUID = '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c'
@@ -58,14 +82,18 @@ $SteamPaths = @(
     'C:\Program Files\Steam\steam.exe'
 )
 
+$Script:CachedServices = @()
+
 # --- FUNCIONES AUXILIARES ----------------------------------------------------
 
-function Write-Banner {
-    param([string]$Title, [string]$Color)
-    Write-Host "`n" -NoNewline
-    Write-Host "╔══════════════════════════════════════════════╗" -ForegroundColor $Color
-    Write-Host "║ $Title" -ForegroundColor $Color
-    Write-Host "╚══════════════════════════════════════════════╝" -ForegroundColor $Color
+function Clear-Screen {
+    [System.Console]::Clear()
+}
+
+function Write-HR {
+    param([string]$Char = '─', [string]$Color = 'DarkGray')
+    $w = [System.Console]::WindowWidth - 1
+    Write-Host ($Char * $w) -ForegroundColor $Color
 }
 
 function Get-RamInfo {
@@ -86,84 +114,104 @@ function Clear-StandbyMemory {
     catch { return 0 }
 }
 
+function Get-PowerPlan {
+    $plan = powercfg /getactivescheme
+    if ($plan -match $HighPerfGUID) { return 'High', 'Alto Rendimiento' }
+    if ($plan -match $BalancedGUID) { return 'Balanced', 'Balanceado' }
+    return 'Custom', 'Personalizado'
+}
+
+function Get-SteamStatus {
+    $p = Get-Process -Name 'steam' -ErrorAction SilentlyContinue
+    if ($p) { return $true, ($p.WorkingSet64 / 1MB) }
+    return $false, 0
+}
+
+function Get-ExplorerStatus {
+    return [bool](Get-Process -Name 'explorer' -ErrorAction SilentlyContinue)
+}
+
+function Get-ScannedProcesses {
+    $groups = @{}
+    $total = 0
+    foreach ($pattern in $KillList) {
+        $procs = Get-Process -Name $pattern -ErrorAction SilentlyContinue
+        foreach ($p in $procs) {
+            $name = $p.Name
+            $mb   = [math]::Round(($p.WorkingSet64 / 1MB), 1)
+            if (-not $groups[$name]) { $groups[$name] = @{ Count = 0; MB = 0 } }
+            $groups[$name].Count++
+            $groups[$name].MB += $mb
+            $total += $mb
+        }
+    }
+    return $groups, [math]::Round($total, 1)
+}
+
 # --- ACCIÓN: ON --------------------------------------------------------------
 
 function Invoke-ChaosOn {
     $startTime = Get-Date
-    $cachedSvcs = @()
 
-    Write-Banner -Title "        ⚡ CHAOS GAME MODE: ON ⚡         " -Color Red
-    Write-Host "  Ryzen 5 5500 | RX 550 | 16GB | Win11`n" -ForegroundColor DarkGray
+    Clear-Screen
+    Write-Host "╭────────────────────────────────────────────────╮" -ForegroundColor Red
+    Write-Host "│  $($I.On)  CHAOS GAME MODE: ACTIVANDO...                │" -ForegroundColor Red
+    Write-Host "╰────────────────────────────────────────────────╯" -ForegroundColor Red
 
-    # 1. Plan de energía
-    Write-Host "[1/5] Plan de energia → Alto Rendimiento" -ForegroundColor Yellow
+    Write-Host "`n$($I.Gear) Plan de energia → Alto Rendimiento" -ForegroundColor Yellow
     powercfg /setactive $HighPerfGUID
 
-    # 2. Matar procesos
-    Write-Host "[2/5] Eliminando procesos en segundo plano..." -ForegroundColor Yellow
+    Write-Host "$($I.Svc) Eliminando procesos en segundo plano..." -ForegroundColor Yellow
     $killed = 0
     foreach ($pattern in $KillList) {
         $procs = Get-Process -Name $pattern -ErrorAction SilentlyContinue
         foreach ($p in $procs) {
             try {
-                $name = $p.Name
-                $mb   = [math]::Round(($p.WorkingSet64 / 1MB), 1)
+                $mb = [math]::Round(($p.WorkingSet64 / 1MB), 1)
                 Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-                Write-Host "  ✕ $name ($mb MB)" -ForegroundColor DarkGray
+                Write-Host "   $($I.Fw) $($p.Name) libero $mb MB" -ForegroundColor DarkGray
                 $killed++
             }
             catch { }
         }
     }
-    if ($killed -eq 0) {
-        Write-Host "  (ningun proceso pesado encontrado)" -ForegroundColor DarkGray
-    }
-    else {
-        Write-Host "  → $killed procesos terminados" -ForegroundColor Green
-    }
+    Write-Host "   $($I.OK) $killed procesos terminados" -ForegroundColor Green
 
-    # 3. Detener servicios no críticos
-    Write-Host "[3/5] Deteniendo servicios del sistema..." -ForegroundColor Yellow
+    Write-Host "$($I.Svc) Deteniendo servicios del sistema..." -ForegroundColor Yellow
     $stopped = 0
+    $Script:CachedServices = @()
     foreach ($svc in $ServicesToStop) {
         $s = Get-Service -Name $svc.Name -ErrorAction SilentlyContinue
         if ($s -and $s.Status -eq 'Running') {
             try {
                 Stop-Service -Name $s.Name -Force -ErrorAction SilentlyContinue
-                $cachedSvcs += $s.Name
-                Write-Host "  ◉ $($svc.Display) → Detenido" -ForegroundColor DarkGray
+                $Script:CachedServices += $s.Name
+                Write-Host "   $($I.Fw) $($svc.Display)" -ForegroundColor DarkGray
                 $stopped++
             }
             catch { }
         }
     }
-    Set-Variable -Name 'CachedServices' -Value $cachedSvcs -Scope Script
-    if ($stopped -eq 0) {
-        Write-Host "  (servicios ya optimizados)" -ForegroundColor DarkGray
-    }
-    else {
-        Write-Host "  → $stopped servicios detenidos" -ForegroundColor Green
-    }
+    Write-Host "   $($I.OK) $stopped servicios detenidos" -ForegroundColor Green
 
-    # 4. Prioridad Steam + auto-lanzamiento
-    Write-Host "[4/5] Verificando Steam..." -ForegroundColor Yellow
+    Write-Host "$($I.Stm) Verificando Steam..." -ForegroundColor Yellow
     $steamRunning = Get-Process -Name 'steam' -ErrorAction SilentlyContinue
     if (-not $steamRunning) {
         $found = $false
         foreach ($sp in $SteamPaths) {
             if (Test-Path $sp) {
-                Write-Host "  → Steam no estaba abierto. Abriendo..." -ForegroundColor Yellow
+                Write-Host "   $($I.Fw) Abriendo Steam..." -ForegroundColor Yellow
                 Start-Process $sp
                 $found = $true
                 break
             }
         }
         if (-not $found) {
-            Write-Host "  [!] No se encontro Steam. Abrelo manualmente." -ForegroundColor DarkYellow
+            Write-Host "   $($I.Warn) No se encontro Steam" -ForegroundColor DarkYellow
         }
     }
     else {
-        Write-Host "  ✓ Steam ya estaba en ejecucion" -ForegroundColor Green
+        Write-Host "   $($I.OK) Steam ya activo, priorizando..." -ForegroundColor Green
         foreach ($sp in @('steam', 'steamservice', 'steamwebhelper')) {
             $p = Get-Process -Name $sp -ErrorAction SilentlyContinue
             if ($p) {
@@ -173,139 +221,275 @@ function Invoke-ChaosOn {
                 catch { }
             }
         }
-        Write-Host "  ✓ Steam priorizado (High + todos los nucleos)" -ForegroundColor Green
     }
 
-    # 5. Explorer + limpieza de RAM
-    Write-Host "[5/5] Liberando recursos del sistema..." -ForegroundColor Yellow
+    Write-Host "$($I.RAM) Liberando recursos del sistema..." -ForegroundColor Yellow
     $exp = Get-Process -Name 'explorer' -ErrorAction SilentlyContinue
     if ($exp) {
         Stop-Process -Name 'explorer' -Force
-        Write-Host "  ✕ explorer.exe suspendido (-300 a -500 MB)" -ForegroundColor DarkGray
+        Write-Host "   $($I.Fw) explorer.exe libero ~400 MB" -ForegroundColor DarkGray
     }
 
     $freed = Clear-StandbyMemory
     if ($freed -gt 0) {
-        Write-Host "  ✓ $freed MB liberados de cache RAM" -ForegroundColor Green
+        Write-Host "   $($I.OK) $freed MB liberados de cache" -ForegroundColor Green
     }
 
     $elapsed = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 1)
     $ram = Get-RamInfo
 
-    Write-Host "`n╔══════════════════════════════════════════════╗" -ForegroundColor Green
-    Write-Host "║  ✅ CHAOS GAME MODE LISTO ($elapsed s)        ║" -ForegroundColor Green
-    Write-Host "║  RAM: $($ram.Free)GB libres / $($ram.Total)GB    ║" -ForegroundColor Cyan
-    Write-Host "║  Steam optimizado + prioridad alta           ║" -ForegroundColor Cyan
-    Write-Host "║                                              ║" -ForegroundColor DarkGray
-    Write-Host "║  Para restaurar: chaosgamemode off           ║" -ForegroundColor Yellow
-    Write-Host "╚══════════════════════════════════════════════╝" -ForegroundColor Green
+    Write-Host "`n╭────────────────────────────────────────────────╮" -ForegroundColor Green
+    Write-Host "│  $($I.OK)  Modo juego listo  ($elapsed s)               │" -ForegroundColor Green
+    Write-Host "│  $($I.RAM)  RAM: $($ram.Free)GB / $($ram.Total)GB                        │" -ForegroundColor Cyan
+    Write-Host "│  $($I.Stm)  Steam optimizado (High + 12 nucleos)      │" -ForegroundColor Cyan
+    Write-Host "╰────────────────────────────────────────────────╯" -ForegroundColor Green
+
+    if (-not $State) {
+        Write-Host "`n   Presiona cualquier tecla para volver..." -NoNewline -ForegroundColor DarkGray
+        $null = [System.Console]::ReadKey($true)
+    }
 }
 
 # --- ACCIÓN: OFF -------------------------------------------------------------
 
 function Invoke-ChaosOff {
-    Write-Banner -Title "       🔄 CHAOS GAME MODE: OFF        " -Color Green
+    Clear-Screen
+    Write-Host "╭────────────────────────────────────────────────╮" -ForegroundColor Yellow
+    Write-Host "│  $($I.Rstr)  CHAOS GAME MODE: RESTAURANDO...               │" -ForegroundColor Yellow
+    Write-Host "╰────────────────────────────────────────────────╯" -ForegroundColor Yellow
 
-    Write-Host "[1/3] Restaurando interfaz de Windows..." -ForegroundColor Yellow
+    Write-Host "`n$($I.Dir) Restaurando interfaz de Windows..." -ForegroundColor Yellow
     if (-not (Get-Process -Name 'explorer' -ErrorAction SilentlyContinue)) {
         Start-Process 'explorer.exe'
-        Write-Host "  ✓ explorer.exe reiniciado" -ForegroundColor Green
+        Write-Host "   $($I.OK) explorer.exe reiniciado" -ForegroundColor Green
     }
 
-    $svcs = Get-Variable -Name 'CachedServices' -ErrorAction SilentlyContinue
-    if ($svcs -and $svcs.Value.Count -gt 0) {
-        Write-Host "[2/3] Restaurando servicios del sistema..." -ForegroundColor Yellow
+    if ($Script:CachedServices.Count -gt 0) {
+        Write-Host "$($I.Svc) Restaurando servicios..." -ForegroundColor Yellow
         $restored = 0
-        foreach ($svcName in $svcs.Value) {
+        foreach ($svcName in $Script:CachedServices) {
             try {
                 Start-Service -Name $svcName -ErrorAction SilentlyContinue
-                Write-Host "  ◉ $svcName → Iniciado" -ForegroundColor DarkGray
+                Write-Host "   $($I.Fw) $svcName" -ForegroundColor DarkGray
                 $restored++
             }
             catch { }
         }
-        Write-Host "  → $restored servicios restaurados" -ForegroundColor Green
-    }
-    else {
-        Write-Host "[2/3] (no hay servicios que restaurar)" -ForegroundColor DarkGray
+        Write-Host "   $($I.OK) $restored servicios restaurados" -ForegroundColor Green
     }
 
-    Write-Host "[3/3] Plan de energia → Balanceado" -ForegroundColor Yellow
+    Write-Host "$($I.Pwr) Plan de energia → Balanceado" -ForegroundColor Yellow
     powercfg /setactive $BalancedGUID
 
-    Write-Host "`n╔══════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "║  ✅ Sistema restaurado                        ║" -ForegroundColor Cyan
-    Write-Host "║  Las apps cerradas (Chrome, Dropbox, etc.)   ║" -ForegroundColor Yellow
-    Write-Host "║  deberas reabrirlas manualmente.             ║" -ForegroundColor Yellow
-    Write-Host "╚══════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host "`n╭────────────────────────────────────────────────╮" -ForegroundColor Cyan
+    Write-Host "│  $($I.OK)  Sistema restaurado                         │" -ForegroundColor Cyan
+    Write-Host "│  $($I.Warn)  Apps cerradas no se reabren solas          │" -ForegroundColor Yellow
+    Write-Host "╰────────────────────────────────────────────────╯" -ForegroundColor Cyan
+
+    if (-not $State) {
+        Write-Host "`n   Presiona cualquier tecla para volver..." -NoNewline -ForegroundColor DarkGray
+        $null = [System.Console]::ReadKey($true)
+    }
 }
 
-# --- ACCIÓN: STATUS ----------------------------------------------------------
+# --- ACCIÓN: STATUS (COMPACTO) -----------------------------------------------
 
 function Invoke-ChaosStatus {
-    Write-Banner -Title "     📊 CHAOS GAME MODE: STATUS      " -Color Cyan
+    $planId, $planName = Get-PowerPlan
+    $ram        = Get-RamInfo
+    $pct        = [math]::Round(($ram.Free / $ram.Total) * 100, 0)
+    $steamOn, $steamMB = Get-SteamStatus
+    $explorerOn = Get-ExplorerStatus
+    $groups, $totalWaste = Get-ScannedProcesses
 
-    # 1. Plan de energía
-    $activePlan = powercfg /getactivescheme
-    if ($activePlan -match $HighPerfGUID) {
-        Write-Host "  ⚡ Energia:  ALTO RENDIMIENTO (activo)" -ForegroundColor Green
+    $planIcon   = if ($planId -eq 'High') { $I.Pwr } else { $I.Batt }
+    $planColor  = if ($planId -eq 'High') { 'Green' } else { 'Yellow' }
+    $expIcon    = if ($explorerOn) { '' } else { '' }
+    $expStatus  = if ($explorerOn) { 'ACTIVO' } else { 'SUSPENDIDO' }
+    $ramColor   = if ($pct -ge 50) { 'Green' } elseif ($pct -ge 25) { 'Yellow' } else { 'Red' }
+    $steamIcon  = if ($steamOn) { $I.Stm } else { $I.Game }
+    $steamColor = if ($steamOn) { 'Green' } else { 'DarkGray' }
+    $steamText  = if ($steamOn) { "ACTIVO  ($([math]::Round($steamMB,0)) MB)" } else { 'CERRADO' }
+
+    Clear-Screen
+    Write-Host "╭────────────────────────────────────────────────╮" -ForegroundColor Cyan
+    Write-Host "│  $($I.TUI)  DIAGNÓSTICO DEL SISTEMA                      │" -ForegroundColor Cyan
+    Write-Host "╰────────────────────────────────────────────────╯" -ForegroundColor Cyan
+    Write-Host ""
+
+    Write-Host "   $planIcon Plan de energia:  " -NoNewline
+    Write-Host $planName -ForegroundColor $planColor
+
+    Write-Host "   $expIcon Explorador:        " -NoNewline
+    Write-Host $expStatus -ForegroundColor $(if ($explorerOn) { 'Yellow' } else { 'Green' })
+
+    Write-Host "   $($I.RAM) Memoria RAM:       " -NoNewline
+    Write-Host "$($ram.Free)GB / $($ram.Total)GB ($pct% libre)" -ForegroundColor $ramColor
+
+    Write-Host "   $steamIcon Steam:            " -NoNewline
+    Write-Host $steamText -ForegroundColor $steamColor
+
+    Write-Host "   $($I.Svc) Servicios:         " -NoNewline
+    $svcsRunning = 0
+    foreach ($svc in $ServicesToStop) {
+        $s = Get-Service -Name $svc.Name -ErrorAction SilentlyContinue
+        if ($s -and $s.Status -eq 'Running') { $svcsRunning++ }
     }
-    elseif ($activePlan -match $BalancedGUID) {
-        Write-Host "  🔋 Energia:  Balanceado (activo)" -ForegroundColor Yellow
+    $svcColor = if ($svcsRunning -eq 0) { 'Green' } elseif ($svcsRunning -le 3) { 'Yellow' } else { 'Red' }
+    Write-Host "$svcsRunning activos de $($ServicesToStop.Count)" -ForegroundColor $svcColor
+
+    Write-Host ""
+
+    if ($groups.Count -gt 0) {
+        Write-Host "   $($I.Warn) Procesos residuales que consumen recursos:"
+        Write-Host "   ─────────────────────────────────────────────────" -ForegroundColor DarkGray
+
+        $sorted = $groups.GetEnumerator() | Sort-Object { $_.Value.MB } -Descending
+        $i = 0
+        foreach ($entry in $sorted) {
+            $name = $entry.Key
+            $data = $entry.Value
+            $pctOfTotal = [math]::Round(($data.MB / $totalWaste) * 100, 0)
+            $barLen = [math]::Max(1, [math]::Min(30, [math]::Round($data.MB / $totalWaste * 30)))
+            $bar = ([char]0x2588) * $barLen + ([char]0x2591) * (30 - $barLen)
+
+            if ($data.MB -ge 500) { $barColor = 'Red' }
+            elseif ($data.MB -ge 200) { $barColor = 'Yellow' }
+            else { $barColor = 'DarkGray' }
+
+            Write-Host "   $([math]::Max(1,$name.Substring(0,[math]::Min($name.Length,20))).PadRight(20)) " -NoNewline -ForegroundColor DarkGray
+            Write-Host "$([math]::Round($data.MB,0)) MB".PadLeft(8) -NoNewline -ForegroundColor $barColor
+            Write-Host (" $($data.Count)x") -NoNewline -ForegroundColor DarkGray
+            Write-Host "  $bar" -NoNewline -ForegroundColor $barColor
+            Write-Host " $pctOfTotal%" -ForegroundColor DarkGray
+
+            $i++
+            if ($i -ge 10) {
+                $remaining = $sorted.Count - 10
+                if ($remaining -gt 0) {
+                    Write-Host "   ... y $remaining procesos mas" -ForegroundColor DarkGray
+                }
+                break
+            }
+        }
+        Write-Host ""
+        Write-Host "   $($I.RAM) Total: " -NoNewline
+        Write-Host "$totalWaste MB" -ForegroundColor Red -NoNewline
+        Write-Host " en $($groups.Count) tipos de procesos" -ForegroundColor DarkGray
     }
     else {
-        Write-Host "  ⚡ Energia:  Personalizado" -ForegroundColor DarkGray
+        Write-Host "   $($I.OK) No se detectaron procesos residuales" -ForegroundColor Green
     }
 
-    # 2. Explorer
-    if (Get-Process -Name 'explorer' -ErrorAction SilentlyContinue) {
-        Write-Host "  🖥️  Explorer: ACTIVO (escritorio visible)" -ForegroundColor Yellow
+    if (-not $State) {
+        Write-Host "`n   Presiona cualquier tecla para volver..." -NoNewline -ForegroundColor DarkGray
+        $null = [System.Console]::ReadKey($true)
     }
-    else {
-        Write-Host "  🖥️  Explorer: SUSPENDIDO (modo gamer extremo)" -ForegroundColor Green
-    }
+}
 
-    # 3. RAM
+# --- TUI: MENÚ PRINCIPAL -----------------------------------------------------
+
+function Show-Menu {
     $ram = Get-RamInfo
     $pct = [math]::Round(($ram.Free / $ram.Total) * 100, 0)
-    Write-Host "  🧠 RAM:     $($ram.Free)GB libres de $($ram.Total)GB ($pct% libre)" -ForegroundColor Magenta
+    $planId, $planName = Get-PowerPlan
+    $steamOn, $_ = Get-SteamStatus
+    $explorerOn = Get-ExplorerStatus
+    $groups, $totalWaste = Get-ScannedProcesses
 
-    # 4. Procesos basura
-    Write-Host "  🔍 Escaneando procesos basura..." -ForegroundColor Cyan
-    $foundAny = $false
-    $totalWaste = 0
-    foreach ($pattern in $KillList) {
-        $procs = Get-Process -Name $pattern -ErrorAction SilentlyContinue
-        foreach ($p in $procs) {
-            $mb = [math]::Round(($p.WorkingSet64 / 1MB), 1)
-            Write-Host "    ⚠ $($p.Name) -> $mb MB" -ForegroundColor Red
-            $foundAny = $true
-            $totalWaste += $mb
+    Clear-Screen
+    Write-Host "╭────────────────────────────────────────────────╮" -ForegroundColor Cyan
+    Write-Host "│  " -NoNewline -ForegroundColor Cyan
+    Write-Host "$($I.Gear) CHAOS GAME MODE" -NoNewline -ForegroundColor Red
+    Write-Host "                         │" -ForegroundColor Cyan
+    Write-Host "│  Ryzen 5 5500  |  RX 550 4GB  |  16GB RAM     │" -ForegroundColor Cyan
+    Write-Host "╰────────────────────────────────────────────────╯" -ForegroundColor Cyan
+
+    Write-Host ""
+
+    if ($explorerOn) { $modeLabel = 'Normal'; $modeColor = 'Yellow' }
+    else { $modeLabel = 'GAMER'; $modeColor = 'Green' }
+
+    Write-Host "     $($I.On)  " -NoNewline -ForegroundColor Green
+    Write-Host "[1] Activar modo juego" -ForegroundColor White
+
+    Write-Host "     $($I.Off)  " -NoNewline -ForegroundColor Yellow
+    Write-Host "[2] Restaurar sistema" -ForegroundColor White
+
+    Write-Host "     $($I.TUI)  " -NoNewline -ForegroundColor Cyan
+    Write-Host "[3] Diagnosticar sistema" -ForegroundColor White
+
+    Write-Host "     $($I.Exit)  " -NoNewline -ForegroundColor Red
+    Write-Host "[4] Salir" -ForegroundColor White
+
+    Write-Host ""
+    Write-Host "  ─────────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host ""
+
+    $pctFree = [math]::Round(($ram.Free / $ram.Total) * 100, 0)
+    $ramColor = if ($pctFree -ge 50) { 'Green' } elseif ($pctFree -ge 25) { 'Yellow' } else { 'Red' }
+
+    if ($groups.Count -gt 0) {
+        $sorted = $groups.GetEnumerator() | Sort-Object { $_.Value.MB } -Descending
+        $top3 = $sorted | Select-Object -First 3
+        $wasteLine = ($top3 | ForEach-Object { "$($_.Key) $([math]::Round($_.Value.MB,0))MB" }) -join ', '
+        if ($sorted.Count -gt 3) { $wasteLine += "..." }
+    }
+    else { $wasteLine = "Ninguno" }
+
+    Write-Host "   $($I.Pwr) Energia:  " -NoNewline
+    Write-Host "$planName" -ForegroundColor $(if ($planId -eq 'High') { 'Green' } else { 'Yellow' })
+
+    Write-Host "   $($I.RAM) RAM:      " -NoNewline
+    Write-Host "$($ram.Free)GB / $($ram.Total)GB ($pct% libre)" -ForegroundColor $ramColor
+
+    Write-Host "   $($I.Stm) Steam:    " -NoNewline
+    Write-Host $(if ($steamOn) { "Activo" } else { "Cerrado" }) -ForegroundColor $(if ($steamOn) { 'Green' } else { 'DarkGray' })
+
+    Write-Host "   $($I.Warn) Basura:   " -NoNewline
+    Write-Host "$totalWaste MB" -ForegroundColor $(if ($totalWaste -gt 0) { 'Red' } else { 'Green' }) -NoNewline
+    Write-Host "  ($wasteLine)" -ForegroundColor DarkGray
+
+    Write-Host ""
+    Write-Host "  ─────────────────────────────────────────────────" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "     Opcion [1-4]: " -NoNewline -ForegroundColor Yellow
+}
+
+# --- TUI: BUCLE PRINCIPAL ----------------------------------------------------
+
+function Start-TUI {
+    do {
+        Show-Menu
+        $key = [System.Console]::ReadKey($true)
+        switch ($key.KeyChar) {
+            '1' { Invoke-ChaosOn }
+            '2' { Invoke-ChaosOff }
+            '3' { Invoke-ChaosStatus }
+            '4' {
+                Clear-Screen
+                Write-Host ""
+                Write-Host "  $($I.Gear) Chaos Game Mode cerrado.  " -ForegroundColor Cyan
+                Write-Host ""
+                return
+            }
+            default {
+                Write-Host "`n   $($I.Warn) Opcion invalida: 1-4" -ForegroundColor Red
+                Start-Sleep -Milliseconds 600
+            }
         }
-    }
-    if (-not $foundAny) {
-        Write-Host "    ✅ Ningun proceso basura detectado" -ForegroundColor Green
-    }
-    else {
-        Write-Host "    ⚠ Total: $totalWaste MB en procesos residuales" -ForegroundColor Red
-    }
-
-    # 5. Steam
-    $steam = Get-Process -Name 'steam' -ErrorAction SilentlyContinue
-    if ($steam) {
-        Write-Host "  🎮 Steam:   EN EJECUCION" -ForegroundColor Green
-    }
-    else {
-        Write-Host "  🎮 Steam:   CERRADO" -ForegroundColor DarkGray
-    }
-
-    Write-Host "`n══════════════════════════════════════════════" -ForegroundColor Cyan
+    } while ($true)
 }
 
 # --- ENTRY POINT -------------------------------------------------------------
 
-switch ($State) {
-    'on'     { Invoke-ChaosOn }
-    'off'    { Invoke-ChaosOff }
-    'status' { Invoke-ChaosStatus }
+if ($State) {
+    switch ($State) {
+        'on'     { Invoke-ChaosOn }
+        'off'    { Invoke-ChaosOff }
+        'status' { Invoke-ChaosStatus }
+    }
+}
+else {
+    Start-TUI
 }
