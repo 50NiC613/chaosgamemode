@@ -1,0 +1,10 @@
+[package]
+name = "chaosgamemode"
+version = "1.0.0"
+edition = "2024"
+description = "Extreme gaming optimization TUI for Windows - kill processes, free RAM, prioritize Steam"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+sysinfo = "0.32"

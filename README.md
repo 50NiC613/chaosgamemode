@@ -1,6 +1,9 @@
 # ⚡ Chaos Game Mode
 
-Optimización extrema para gaming en Windows. Script de PowerShell con **TUI interactiva** que mata procesos innecesarios, detiene servicios del sistema, libera RAM y prioriza Steam al instante.
+Optimización extrema para gaming en Windows. **TUI nativa en Rust** (ratatui) + script PowerShell. Mata procesos innecesarios, detiene servicios, libera RAM y prioriza Steam al instante.
+
+> 🦀 **Nuevo:** App nativa compilada en Rust con [ratatui](https://github.com/ratatui-org/ratatui).
+> Binario: ~800 KB, RAM en reposo: < 5 MB, arranque instantáneo.
 
 ## Sistema objetivo
 
@@ -13,25 +16,40 @@ Optimización extrema para gaming en Windows. Script de PowerShell con **TUI int
 
 ## Instalación
 
-### Opción 1: Script independiente (recomendado)
+### Opción 1: Rust TUI (recomendada — nativa, rápida, ~800 KB)
+
+Requiere [Rust](https://rustup.rs) (MSVC toolchain con Visual Studio Build Tools).
 
 ```powershell
-# Descarga o copia chaosgamemode.ps1 a una carpeta, luego:
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-.\chaosgamemode.ps1          # Abre la TUI interactiva
-.\chaosgamemode.ps1 on       # Activar modo juego
-.\chaosgamemode.ps1 off      # Restaurar sistema
-.\chaosgamemode.ps1 status   # Ver diagnóstico compacto
+# Construir desde codigo
+cd D:\Dev\chaosgamemode\tui-rs
+cargo build --release
+
+# Ejecutar (TUI interactiva)
+.\target\release\chaosgamemode.exe
 ```
 
-### Opción 2: Perfil de PowerShell (disponible globalmente)
+### Opción 2: Script PowerShell (CLI rápida)
 
 ```powershell
-# Agrega la funcion a tu perfil
+# Sin compilacion, funciona en cualquier PC con PowerShell
+.\chaosgamemode.ps1          # TUI interactiva (PowerShell)
+.\chaosgamemode.ps1 on       # Activar modo juego
+.\chaosgamemode.ps1 off      # Restaurar sistema
+.\chaosgamemode.ps1 status   # Diagnóstico compacto
+```
+
+### Opción 3: Perfil de PowerShell (comando global)
+
+```powershell
 notepad $PROFILE
-# Pega el contenido de chaosgamemode.ps1 (sin el bloque param)
+# Agrega la funcion (ver docs/perfil.txt)
 # Guarda y recarga:
 . $PROFILE
+# Ahora funciona desde cualquier terminal:
+chaosgamemode         # Rust TUI si existe, si no PowerShell
+chaosgamemode on      # CLI directa
+chaosgamemode status  # Diagnóstico compacto
 ```
 
 ## Uso

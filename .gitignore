@@ -1,0 +1,5 @@
+# Rust build artifacts
+tui-rs/target/
+tui-rs/Cargo.lock
+*.exe
+*.exe~
