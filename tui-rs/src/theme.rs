@@ -469,7 +469,7 @@ impl ThemeWatcher {
 
         let Some(path) = self.path.as_ref() else {
             return format!(
-                "theme preset: {} aplicado en memoria; theme.toml no encontrado",
+                "tema activo: {} en memoria; theme.toml no encontrado",
                 preset.label()
             );
         };
@@ -479,15 +479,15 @@ impl ThemeWatcher {
                 self.modified = fs::metadata(path)
                     .and_then(|metadata| metadata.modified())
                     .ok();
-                format!("theme preset: {} guardado", preset.label())
+                format!("tema activo: {} guardado", preset.label())
             }
-            Err(err) => format!("theme preset error: {err}"),
+            Err(err) => format!("error de tema: {err}"),
         }
     }
 
     fn load_theme(&mut self, theme: &mut Theme) -> String {
         let Some(path) = self.path.as_ref() else {
-            return "theme.toml no encontrado; usando tema interno".to_string();
+            return "tema interno activo; theme.toml no encontrado".to_string();
         };
 
         self.modified = fs::metadata(path)
@@ -498,9 +498,9 @@ impl ThemeWatcher {
             Ok(loaded) => {
                 *theme = loaded.theme;
                 self.active_preset = loaded.preset;
-                format!("theme reloaded: {}", path.display())
+                format!("tema activo: {}", loaded.preset.label())
             }
-            Err(err) => format!("theme error: {err}"),
+            Err(err) => format!("error de tema: {err}"),
         }
     }
 }
@@ -620,5 +620,35 @@ mod tests {
         });
 
         assert_eq!(loaded.theme.hot_red, Color::Rgb(255, 0, 0));
+    }
+
+    #[test]
+    fn theme_status_should_not_expose_file_path() {
+        let file_name = format!(
+            "chaosgamemode-theme-{}.toml",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after unix epoch")
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(file_name);
+        fs::write(&path, "preset = \"gruvbox\"\n").expect("theme fixture should be writable");
+
+        let mut watcher = ThemeWatcher {
+            path: Some(path.clone()),
+            modified: None,
+            last_check: Instant::now() - THEME_RELOAD_RATE,
+            active_preset: ThemePreset::default(),
+        };
+        let mut theme = Theme::default();
+        let status = watcher.load_theme(&mut theme);
+
+        assert_eq!(status, "tema activo: Gruvbox");
+        assert!(
+            !status.contains(path.to_string_lossy().as_ref()),
+            "theme status should not include local file paths"
+        );
+
+        fs::remove_file(path).expect("theme fixture should be removable");
     }
 }

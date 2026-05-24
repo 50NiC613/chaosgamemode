@@ -319,12 +319,6 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled(format!(" {} ", lang.exit()), Style::new().fg(theme.muted)),
     ]);
 
-    // Theme status
-    spans.push(Span::styled(
-        format!("  {}", truncate(&app.theme_status, 24)),
-        Style::new().fg(theme.muted),
-    ));
-
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)

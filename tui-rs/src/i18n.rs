@@ -7,6 +7,7 @@ pub(crate) enum Language {
     English,
 }
 
+#[allow(dead_code)]
 impl Language {
     pub(crate) fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
@@ -324,6 +325,578 @@ impl Language {
         match self {
             Self::Spanish => "activo",
             Self::English => "active",
+        }
+    }
+
+    pub(crate) const fn loading_steam_scan(self) -> &'static str {
+        match self {
+            Self::Spanish => "auto detect espera escaneo Steam",
+            Self::English => "auto detect waiting for Steam scan",
+        }
+    }
+
+    pub(crate) fn auto_detect_ready(self, games: usize) -> String {
+        match self {
+            Self::Spanish => format!("auto detect listo: {games} juegos"),
+            Self::English => format!("auto detect ready: {games} games"),
+        }
+    }
+
+    pub(crate) const fn auto_detect_no_games(self) -> &'static str {
+        match self {
+            Self::Spanish => "auto detect sin juegos de Steam",
+            Self::English => "auto detect unavailable: no Steam games",
+        }
+    }
+
+    pub(crate) const fn manual_session_active(self) -> &'static str {
+        match self {
+            Self::Spanish => "sesion manual activa",
+            Self::English => "manual session active",
+        }
+    }
+
+    pub(crate) const fn auto_detect_armed(self) -> &'static str {
+        match self {
+            Self::Spanish => "auto detect armado",
+            Self::English => "auto detect armed",
+        }
+    }
+
+    pub(crate) fn tracking(self, name: &str) -> String {
+        match self {
+            Self::Spanish => format!("siguiendo {name}"),
+            Self::English => format!("tracking {name}"),
+        }
+    }
+
+    pub(crate) fn detected(self, name: &str) -> String {
+        match self {
+            Self::Spanish => format!("detectado {name}"),
+            Self::English => format!("detected {name}"),
+        }
+    }
+
+    pub(crate) const fn auto_session_ended(self) -> &'static str {
+        match self {
+            Self::Spanish => "sesion automatica cerrada",
+            Self::English => "auto session ended",
+        }
+    }
+
+    pub(crate) const fn auto_detect_paused(self) -> &'static str {
+        match self {
+            Self::Spanish => "auto detect pausado para juego cerrado",
+            Self::English => "auto detect paused for ended game",
+        }
+    }
+
+    pub(crate) const fn no_steam_game_selected(self) -> &'static str {
+        match self {
+            Self::Spanish => "  No hay juego seleccionado.",
+            Self::English => "  No Steam game selected.",
+        }
+    }
+
+    pub(crate) const fn rescan_steam_hint(self) -> &'static str {
+        match self {
+            Self::Spanish => "  Pulsa S en la pestana Steam para re-escanear la biblioteca.",
+            Self::English => "  Press S in the Steam tab to rescan the library.",
+        }
+    }
+
+    pub(crate) const fn overdrive_preview_title(self) -> &'static str {
+        match self {
+            Self::Spanish => "PREVIEW DE OVERDRIVE",
+            Self::English => "OVERDRIVE PREVIEW",
+        }
+    }
+
+    pub(crate) const fn profile_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Perfil",
+            Self::English => "Profile",
+        }
+    }
+
+    pub(crate) const fn launch_after_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Luego lanzara",
+            Self::English => "Then launch",
+        }
+    }
+
+    pub(crate) const fn configured_processes_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Procesos configurados",
+            Self::English => "Configured processes",
+        }
+    }
+
+    pub(crate) const fn protected_processes_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Procesos protegidos",
+            Self::English => "Protected processes",
+        }
+    }
+
+    pub(crate) const fn hidden_processes_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Procesos ocultos",
+            Self::English => "Hidden processes",
+        }
+    }
+
+    pub(crate) const fn detected_processes_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Procesos detectados ahora",
+            Self::English => "Processes detected now",
+        }
+    }
+
+    pub(crate) const fn configured_services_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Servicios configurados",
+            Self::English => "Configured services",
+        }
+    }
+
+    pub(crate) const fn explorer_will_stop(self) -> &'static str {
+        match self {
+            Self::Spanish => "se cerrara",
+            Self::English => "will stop",
+        }
+    }
+
+    pub(crate) const fn explorer_kept(self) -> &'static str {
+        match self {
+            Self::Spanish => "se mantiene abierto",
+            Self::English => "kept running",
+        }
+    }
+
+    pub(crate) const fn energy_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Energia",
+            Self::English => "Power",
+        }
+    }
+
+    pub(crate) const fn high_performance_plan(self) -> &'static str {
+        match self {
+            Self::Spanish => "Alto Rendimiento",
+            Self::English => "High Performance",
+        }
+    }
+
+    pub(crate) const fn balanced_plan(self) -> &'static str {
+        match self {
+            Self::Spanish => "Balanceado",
+            Self::English => "Balanced",
+        }
+    }
+
+    pub(crate) const fn no_changes(self) -> &'static str {
+        match self {
+            Self::Spanish => "sin cambios",
+            Self::English => "unchanged",
+        }
+    }
+
+    pub(crate) const fn overdrive_targets_heading(self) -> &'static str {
+        match self {
+            Self::Spanish => "Procesos que Overdrive intentara cerrar ahora:",
+            Self::English => "Processes Overdrive will try to close now:",
+        }
+    }
+
+    pub(crate) const fn confirm_hint(self) -> &'static str {
+        match self {
+            Self::Spanish => "Y/ENTER confirma / N/ESC cancela",
+            Self::English => "Y/ENTER confirms / N/ESC cancels",
+        }
+    }
+
+    pub(crate) const fn no_overdrive_targets(self) -> &'static str {
+        match self {
+            Self::Spanish => "  (ningun proceso objetivo detectado en este perfil)",
+            Self::English => "  (no target process detected for this profile)",
+        }
+    }
+
+    pub(crate) const fn exe_path_unavailable(self) -> &'static str {
+        match self {
+            Self::Spanish => "ruta no disponible",
+            Self::English => "path unavailable",
+        }
+    }
+
+    pub(crate) const fn steam_uninstall_title(self) -> &'static str {
+        match self {
+            Self::Spanish => "CONFIRMAR DESINSTALACION STEAM",
+            Self::English => "STEAM UNINSTALL CONFIRMATION",
+        }
+    }
+
+    pub(crate) const fn game_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Juego",
+            Self::English => "Game",
+        }
+    }
+
+    pub(crate) const fn install_path_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Instalacion",
+            Self::English => "Install path",
+        }
+    }
+
+    pub(crate) const fn library_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Biblioteca",
+            Self::English => "Library",
+        }
+    }
+
+    pub(crate) const fn steam_uninstall_safe_1(self) -> &'static str {
+        match self {
+            Self::Spanish => "Esta accion NO borra archivos directamente desde Chaos Game Mode.",
+            Self::English => "This action does NOT delete files directly from Chaos Game Mode.",
+        }
+    }
+
+    pub(crate) const fn steam_uninstall_safe_2(self) -> &'static str {
+        match self {
+            Self::Spanish => "La app solo abrira la confirmacion oficial de Steam.",
+            Self::English => "The app only opens Steam's official confirmation.",
+        }
+    }
+
+    pub(crate) const fn steam_uninstall_safe_3(self) -> &'static str {
+        match self {
+            Self::Spanish => "Steam puede cerrar descargas o procesos relacionados.",
+            Self::English => "Steam may stop related downloads or processes.",
+        }
+    }
+
+    pub(crate) const fn steam_uninstall_hint(self) -> &'static str {
+        match self {
+            Self::Spanish => "Y/ENTER abre steam://uninstall / N/ESC cancela",
+            Self::English => "Y/ENTER opens steam://uninstall / N/ESC cancels",
+        }
+    }
+
+    pub(crate) fn history_status_loaded(self, visible: usize, total: usize) -> String {
+        if total == 0 {
+            return match self {
+                Self::Spanish => "sin historial todavia".to_string(),
+                Self::English => "no history yet".to_string(),
+            };
+        }
+        if total > visible {
+            return match self {
+                Self::Spanish => format!("mostrando ultimas {visible}/{total} lineas"),
+                Self::English => format!("showing latest {visible}/{total} lines"),
+            };
+        }
+        match self {
+            Self::Spanish => format!("{visible} lineas cargadas"),
+            Self::English => format!("{visible} lines loaded"),
+        }
+    }
+
+    pub(crate) fn saved_history(self, path: &std::path::Path) -> String {
+        match self {
+            Self::Spanish => format!("  Historial guardado: {}", path.display()),
+            Self::English => format!("  History saved: {}", path.display()),
+        }
+    }
+
+    pub(crate) fn history_save_error(self, err: &std::io::Error) -> String {
+        match self {
+            Self::Spanish => format!("  [history] no se pudo guardar: {err}"),
+            Self::English => format!("  [history] could not save: {err}"),
+        }
+    }
+
+    pub(crate) const fn telemetry_refreshing(self) -> &'static str {
+        match self {
+            Self::Spanish => "  Telemetria en segundo plano: actualizando snapshot...",
+            Self::English => "  Background telemetry: refreshing snapshot...",
+        }
+    }
+
+    pub(crate) const fn session_started(self) -> &'static str {
+        match self {
+            Self::Spanish => "Sesion iniciada",
+            Self::English => "Session started",
+        }
+    }
+
+    pub(crate) const fn session_started_auto(self) -> &'static str {
+        match self {
+            Self::Spanish => "Sesion iniciada automaticamente",
+            Self::English => "Session started automatically",
+        }
+    }
+
+    pub(crate) const fn no_active_session(self) -> &'static str {
+        match self {
+            Self::Spanish => "  No hay sesion activa.",
+            Self::English => "  No active session.",
+        }
+    }
+
+    pub(crate) const fn session_closed_prefix(self) -> &'static str {
+        match self {
+            Self::Spanish => "Sesion cerrada",
+            Self::English => "Session closed",
+        }
+    }
+
+    pub(crate) const fn launching(self) -> &'static str {
+        match self {
+            Self::Spanish => "Lanzando",
+            Self::English => "Launching",
+        }
+    }
+
+    pub(crate) const fn steam_launch_uri_sent(self) -> &'static str {
+        match self {
+            Self::Spanish => "Steam launch URI enviado",
+            Self::English => "Steam launch URI sent",
+        }
+    }
+
+    pub(crate) const fn steam_uri_sent(self) -> &'static str {
+        match self {
+            Self::Spanish => "Steam URI enviado",
+            Self::English => "Steam URI sent",
+        }
+    }
+
+    pub(crate) const fn steam_uninstall_opened(self) -> &'static str {
+        match self {
+            Self::Spanish => "Confirmacion de Steam abierta",
+            Self::English => "Steam confirmation opened",
+        }
+    }
+
+    pub(crate) const fn steam_uri_failed(self) -> &'static str {
+        match self {
+            Self::Spanish => "No se pudo invocar",
+            Self::English => "Could not invoke",
+        }
+    }
+
+    pub(crate) const fn steam_install_title(self) -> &'static str {
+        match self {
+            Self::Spanish => "Instalar desde Steam",
+            Self::English => "Install from Steam",
+        }
+    }
+
+    pub(crate) const fn steam_validate_title(self) -> &'static str {
+        match self {
+            Self::Spanish => "Validar archivos",
+            Self::English => "Validate files",
+        }
+    }
+
+    pub(crate) const fn steam_properties_title(self) -> &'static str {
+        match self {
+            Self::Spanish => "Abrir propiedades",
+            Self::English => "Open properties",
+        }
+    }
+
+    pub(crate) const fn steam_downloads_title(self) -> &'static str {
+        match self {
+            Self::Spanish => "Abriendo descargas de Steam",
+            Self::English => "Opening Steam downloads",
+        }
+    }
+
+    pub(crate) const fn steam_uninstall_action_title(self) -> &'static str {
+        match self {
+            Self::Spanish => "Desinstalar desde Steam",
+            Self::English => "Uninstall from Steam",
+        }
+    }
+
+    pub(crate) const fn client_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "Cliente",
+            Self::English => "Client",
+        }
+    }
+
+    pub(crate) const fn auto_detected_game(self) -> &'static str {
+        match self {
+            Self::Spanish => "Juego Steam detectado automaticamente",
+            Self::English => "Auto-detected Steam game",
+        }
+    }
+
+    pub(crate) const fn system_info_no_processes(self) -> &'static str {
+        match self {
+            Self::Spanish => "perfil sin procesos configurados",
+            Self::English => "profile has no configured processes",
+        }
+    }
+
+    pub(crate) fn system_process_closed(self, line: &str) -> String {
+        match self {
+            Self::Spanish => format!("proceso cerrado: {line}"),
+            Self::English => format!("process closed: {line}"),
+        }
+    }
+
+    pub(crate) const fn system_no_heavy_process(self) -> &'static str {
+        match self {
+            Self::Spanish => "ningun proceso pesado encontrado",
+            Self::English => "no heavy process found",
+        }
+    }
+
+    pub(crate) const fn system_no_services(self) -> &'static str {
+        match self {
+            Self::Spanish => "perfil sin servicios configurados",
+            Self::English => "profile has no configured services",
+        }
+    }
+
+    pub(crate) fn system_service_stopped(self, service: &str) -> String {
+        match self {
+            Self::Spanish => format!("servicio detenido: {service}"),
+            Self::English => format!("service stopped: {service}"),
+        }
+    }
+
+    pub(crate) fn system_service_started(self, service: &str) -> String {
+        match self {
+            Self::Spanish => format!("servicio iniciado: {service}"),
+            Self::English => format!("service started: {service}"),
+        }
+    }
+
+    pub(crate) const fn system_services_optimized(self) -> &'static str {
+        match self {
+            Self::Spanish => "servicios ya optimizados",
+            Self::English => "services already optimized",
+        }
+    }
+
+    pub(crate) const fn steam_not_found_manual(self) -> &'static str {
+        match self {
+            Self::Spanish => "no se encontro Steam, abrelo manualmente",
+            Self::English => "Steam not found, open it manually",
+        }
+    }
+
+    pub(crate) const fn steam_already_active(self) -> &'static str {
+        match self {
+            Self::Spanish => "Steam ya activo, prioridad asignada",
+            Self::English => "Steam already active, priority assigned",
+        }
+    }
+
+    pub(crate) const fn steam_opened(self) -> &'static str {
+        match self {
+            Self::Spanish => "Steam abierto automaticamente",
+            Self::English => "Steam opened automatically",
+        }
+    }
+
+    pub(crate) const fn explorer_stopped(self) -> &'static str {
+        match self {
+            Self::Spanish => "explorer.exe suspendido (~400 MB liberados)",
+            Self::English => "explorer.exe suspended (~400 MB freed)",
+        }
+    }
+
+    pub(crate) const fn explorer_started(self) -> &'static str {
+        match self {
+            Self::Spanish => "explorer.exe reiniciado",
+            Self::English => "explorer.exe restarted",
+        }
+    }
+
+    pub(crate) const fn active_profile_line(self) -> &'static str {
+        match self {
+            Self::Spanish => "perfil activo",
+            Self::English => "active profile",
+        }
+    }
+
+    pub(crate) const fn power_plan_line(self) -> &'static str {
+        match self {
+            Self::Spanish => "plan de energia",
+            Self::English => "power plan",
+        }
+    }
+
+    pub(crate) const fn killing_background_processes(self) -> &'static str {
+        match self {
+            Self::Spanish => "eliminando procesos en segundo plano",
+            Self::English => "closing background processes",
+        }
+    }
+
+    pub(crate) const fn stopping_services(self) -> &'static str {
+        match self {
+            Self::Spanish => "deteniendo servicios",
+            Self::English => "stopping services",
+        }
+    }
+
+    pub(crate) const fn freeing_system_resources(self) -> &'static str {
+        match self {
+            Self::Spanish => "liberando recursos del sistema",
+            Self::English => "freeing system resources",
+        }
+    }
+
+    pub(crate) const fn explorer_kept_report(self) -> &'static str {
+        match self {
+            Self::Spanish => "explorer se mantiene activo en este perfil",
+            Self::English => "explorer remains active in this profile",
+        }
+    }
+
+    pub(crate) const fn overdrive_activated(self) -> &'static str {
+        match self {
+            Self::Spanish => "CHAOS GAME MODE ACTIVADO",
+            Self::English => "CHAOS GAME MODE ACTIVATED",
+        }
+    }
+
+    pub(crate) const fn restoring_windows_shell(self) -> &'static str {
+        match self {
+            Self::Spanish => "restaurando interfaz de Windows",
+            Self::English => "restoring Windows shell",
+        }
+    }
+
+    pub(crate) const fn restoring_services(self) -> &'static str {
+        match self {
+            Self::Spanish => "restaurando servicios",
+            Self::English => "restoring services",
+        }
+    }
+
+    pub(crate) const fn system_restored(self) -> &'static str {
+        match self {
+            Self::Spanish => "SISTEMA RESTAURADO",
+            Self::English => "SYSTEM RESTORED",
+        }
+    }
+
+    pub(crate) const fn closed_apps_not_reopened(self) -> &'static str {
+        match self {
+            Self::Spanish => "apps cerradas no se reabren solas",
+            Self::English => "closed apps are not reopened automatically",
         }
     }
 }

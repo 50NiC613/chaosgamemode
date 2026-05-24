@@ -240,7 +240,8 @@ pub(crate) fn run() -> io::Result<()> {
     let steam_rx = spawn_steam_scan();
     let (theme_watcher, theme, theme_preset, theme_status) = ThemeWatcher::new();
     let presentmon_probe = probe_presentmon(config.integrations.presentmon_exe.as_deref());
-    let history_view = load_history_view();
+    let language = config.ui.language;
+    let history_view = load_history_view(language);
     let now = Instant::now();
 
     let mut app = App {
@@ -263,7 +264,7 @@ pub(crate) fn run() -> io::Result<()> {
         steam: SteamLibrary::loading(),
         steam_rx,
         session: SessionState::default(),
-        auto_session_status: "auto detect waiting for Steam scan".to_string(),
+        auto_session_status: language.loading_steam_scan().to_string(),
         auto_session_ignore_app_id: None,
         process_selected: 0,
         show_hidden_processes: false,
@@ -299,20 +300,11 @@ pub(crate) fn run() -> io::Result<()> {
     Ok(())
 }
 
-fn load_history_view() -> HistoryView {
+fn load_history_view(language: Language) -> HistoryView {
     match history::read_recent_lines(HISTORY_VIEW_LIMIT) {
         Ok(snapshot) => {
             let visible_lines = snapshot.lines.len();
-            let status = if snapshot.total_lines == 0 {
-                "sin historial todavia".to_string()
-            } else if snapshot.total_lines > visible_lines {
-                format!(
-                    "mostrando ultimas {visible_lines}/{} lineas",
-                    snapshot.total_lines
-                )
-            } else {
-                format!("{visible_lines} lineas cargadas")
-            };
+            let status = language.history_status_loaded(visible_lines, snapshot.total_lines);
 
             HistoryView {
                 path: snapshot.path,
@@ -329,7 +321,7 @@ fn load_history_view() -> HistoryView {
 }
 
 fn refresh_history(app: &mut App) {
-    let history_view = load_history_view();
+    let history_view = load_history_view(app.config.ui.language);
     app.history_path = history_view.path;
     app.history_lines = history_view.lines;
     app.history_status = history_view.status;
@@ -429,7 +421,11 @@ fn drain_telemetry(app: &mut App) {
 fn drain_steam_scan(app: &mut App) {
     while let Ok(result) = app.steam_rx.try_recv() {
         app.steam.apply_scan(result);
-        app.auto_session_status = format!("auto detect ready: {} games", app.steam.games.len());
+        app.auto_session_status = app
+            .config
+            .ui
+            .language
+            .auto_detect_ready(app.steam.games.len());
         sync_auto_steam_session(app);
     }
 }
@@ -675,7 +671,7 @@ fn request_steam_uninstall_confirmation(app: &mut App) {
         return;
     };
 
-    app.confirm_lines = steam_uninstall_preview(&game);
+    app.confirm_lines = steam_uninstall_preview(&game, app.config.ui.language);
     app.confirm_scroll = 0;
     app.pending_action = Some(PendingAction::UninstallSteamGame(game));
     app.screen = Screen::Confirm;
@@ -684,11 +680,12 @@ fn request_steam_uninstall_confirmation(app: &mut App) {
 fn selected_steam_game_or_warn(app: &mut App) -> Option<SteamGame> {
     let game = app.steam.selected_game().cloned();
     if game.is_none() {
+        let language = app.config.ui.language;
         show_output(
             app,
             vec![
-                "  No hay juego seleccionado.".to_string(),
-                "  Pulsa S en la pestana Steam para re-escanear la biblioteca.".to_string(),
+                language.no_steam_game_selected().to_string(),
+                language.rescan_steam_hint().to_string(),
             ],
         );
     }
@@ -696,92 +693,125 @@ fn selected_steam_game_or_warn(app: &mut App) -> Option<SteamGame> {
 }
 
 fn overdrive_preview(app: &App, game: Option<&SteamGame>) -> Vec<String> {
+    let language = app.config.ui.language;
     let profile = app.config.active_profile();
     let mut lines = Vec::new();
-    lines.push("OVERDRIVE PREVIEW".to_string());
-    lines.push(format!("  Perfil: {}", app.config.active_profile_name()));
+    lines.push(language.overdrive_preview_title().to_string());
+    lines.push(format!(
+        "  {}: {}",
+        language.profile_label(),
+        app.config.active_profile_name()
+    ));
     if let Some(game) = game {
         lines.push(format!(
-            "  Luego lanzara: {} (#{}).",
-            game.name, game.app_id
+            "  {}: {} (#{}).",
+            language.launch_after_label(),
+            game.name,
+            game.app_id
         ));
     }
     lines.push(format!(
-        "  Procesos configurados: {} patrones.",
+        "  {}: {}.",
+        language.configured_processes_label(),
         profile.processes.len()
     ));
     lines.push(format!(
-        "  Procesos protegidos: {} patrones.",
+        "  {}: {}.",
+        language.protected_processes_label(),
         profile.protected_processes.len()
     ));
     lines.push(format!(
-        "  Procesos ocultos: {} patrones + Windows host/core.",
+        "  {}: {}.",
+        language.hidden_processes_label(),
         profile.hidden_processes.len()
     ));
     lines.push(format!(
-        "  Procesos detectados ahora: {} grupos / {:.0} MB.",
+        "  {}: {} / {:.0} MB.",
+        language.detected_processes_label(),
         app.state.processes.len(),
         app.state.total_waste_mb
     ));
     lines.push(format!(
-        "  Servicios configurados: {}.",
+        "  {}: {}.",
+        language.configured_services_label(),
         profile.services.len()
     ));
     lines.push(format!(
         "  Explorer: {}.",
         if profile.kill_explorer {
-            "se cerrara"
+            language.explorer_will_stop()
         } else {
-            "se mantiene abierto"
+            language.explorer_kept()
         }
     ));
     lines.push(format!(
-        "  Energia: {}.",
+        "  {}: {}.",
+        language.energy_label(),
         if profile.set_high_performance {
-            "Alto Rendimiento"
+            language.high_performance_plan()
         } else {
-            "sin cambios"
+            language.no_changes()
         }
     ));
     lines.push(String::new());
-    lines.push("Procesos que Overdrive intentara cerrar ahora:".to_string());
-    lines.extend(overdrive_target_preview_lines(&app.state));
+    lines.push(language.overdrive_targets_heading().to_string());
+    lines.extend(overdrive_target_preview_lines(
+        &app.state,
+        app.config.ui.language,
+    ));
 
     lines.push(String::new());
-    lines.push("Y/ENTER confirma / N/ESC cancela".to_string());
+    lines.push(language.confirm_hint().to_string());
     lines
 }
 
-fn steam_uninstall_preview(game: &SteamGame) -> Vec<String> {
+fn steam_uninstall_preview(game: &SteamGame, language: Language) -> Vec<String> {
     vec![
-        "STEAM UNINSTALL CONFIRMATION".to_string(),
-        format!("  Juego: {} (#{}).", game.name, game.app_id),
-        format!("  Instalacion: {}", game.install_dir.display()),
-        format!("  Biblioteca: {}", game.library_dir.display()),
+        language.steam_uninstall_title().to_string(),
+        format!(
+            "  {}: {} (#{}).",
+            language.game_label(),
+            game.name,
+            game.app_id
+        ),
+        format!(
+            "  {}: {}",
+            language.install_path_label(),
+            game.install_dir.display()
+        ),
+        format!(
+            "  {}: {}",
+            language.library_label(),
+            game.library_dir.display()
+        ),
         String::new(),
-        "Esta accion NO borra archivos directamente desde Chaos Game Mode.".to_string(),
-        "La app solo abrira la confirmacion oficial de Steam para desinstalar.".to_string(),
-        "Steam puede cerrar descargas o procesos relacionados con ese juego.".to_string(),
+        language.steam_uninstall_safe_1().to_string(),
+        language.steam_uninstall_safe_2().to_string(),
+        language.steam_uninstall_safe_3().to_string(),
         String::new(),
-        "Y/ENTER abre steam://uninstall / N/ESC cancela".to_string(),
+        language.steam_uninstall_hint().to_string(),
     ]
 }
 
-fn overdrive_target_preview_lines(state: &SystemState) -> Vec<String> {
+fn overdrive_target_preview_lines(state: &SystemState, language: Language) -> Vec<String> {
     let mut sorted: Vec<_> = state.processes.iter().collect();
     sorted.sort_by(|a, b| b.1.memory_mb.total_cmp(&a.1.memory_mb));
 
     if sorted.is_empty() {
-        return vec!["  (ningun proceso objetivo detectado en este perfil)".to_string()];
+        return vec![language.no_overdrive_targets().to_string()];
     }
 
     sorted
         .into_iter()
-        .flat_map(|(name, group)| format_target_process_preview(name, group))
+        .flat_map(|(name, group)| format_target_process_preview(name, group, language))
         .collect()
 }
 
-fn format_target_process_preview(name: &str, group: &ProcessGroup) -> [String; 2] {
+fn format_target_process_preview(
+    name: &str,
+    group: &ProcessGroup,
+    language: Language,
+) -> [String; 2] {
     let header = format!(
         "  {:<24} {:>7.0} MB  {:>2}x",
         truncate(name, 24),
@@ -792,7 +822,7 @@ fn format_target_process_preview(name: &str, group: &ProcessGroup) -> [String; 2
         .exe_path
         .as_deref()
         .map(|path| truncate(path, 72))
-        .unwrap_or_else(|| "ruta no disponible".to_string());
+        .unwrap_or_else(|| language.exe_path_unavailable().to_string());
     [header, format!("    exe: {path}")]
 }
 
@@ -846,19 +876,24 @@ fn show_output(app: &mut App, output: Vec<String>) {
     app.screen = Screen::Output;
 }
 
-fn append_history_status(log: &mut Vec<String>, result: io::Result<PathBuf>) {
+fn append_history_status(log: &mut Vec<String>, result: io::Result<PathBuf>, language: Language) {
     match result {
-        Ok(path) => log.push(format!("  Historial guardado: {}", path.display())),
-        Err(err) => log.push(format!("  [history] no se pudo guardar: {err}")),
+        Ok(path) => log.push(language.saved_history(&path)),
+        Err(err) => log.push(language.history_save_error(&err)),
     }
 }
 
-fn append_action_history(log: &mut Vec<String>, event: &str, profile_name: &str) {
+fn append_action_history(
+    log: &mut Vec<String>,
+    event: &str,
+    profile_name: &str,
+    language: Language,
+) {
     let result = history::append_action(event, profile_name, log);
-    append_history_status(log, result);
+    append_history_status(log, result, language);
 }
 
-fn append_session_history(log: &mut Vec<String>, session: &CompletedSession) {
+fn append_session_history(log: &mut Vec<String>, session: &CompletedSession, language: Language) {
     let result = history::append_session(
         &session.name,
         &session.app_id,
@@ -866,7 +901,7 @@ fn append_session_history(log: &mut Vec<String>, session: &CompletedSession) {
         session.overdrive,
         session.source.as_str(),
     );
-    append_history_status(log, result);
+    append_history_status(log, result, language);
 }
 
 fn refresh_history_if_visible(app: &mut App) {
@@ -928,12 +963,13 @@ fn end_history_scroll(app: &mut App) {
 }
 
 fn sync_auto_steam_session(app: &mut App) {
+    let language = app.config.ui.language;
     if app.steam.scanning {
-        app.auto_session_status = "auto detect waiting for Steam scan".to_string();
+        app.auto_session_status = language.loading_steam_scan().to_string();
         return;
     }
     if app.steam.games.is_empty() {
-        app.auto_session_status = "auto detect unavailable: no Steam games".to_string();
+        app.auto_session_status = language.auto_detect_no_games().to_string();
         return;
     }
 
@@ -944,11 +980,11 @@ fn sync_auto_steam_session(app: &mut App) {
 
     if !app.session.active_is_auto_detected() {
         if app.session.active.is_some() {
-            app.auto_session_status = "manual session active".to_string();
+            app.auto_session_status = language.manual_session_active().to_string();
         } else if let Some(game) = detected {
             start_auto_detected_session(app, game);
         } else {
-            app.auto_session_status = "auto detect armed".to_string();
+            app.auto_session_status = language.auto_detect_armed().to_string();
         }
         return;
     }
@@ -956,7 +992,7 @@ fn sync_auto_steam_session(app: &mut App) {
     let active_app_id = app.session.active_app_id().map(ToOwned::to_owned);
     match (active_app_id.as_deref(), detected) {
         (Some(active_app_id), Some(game)) if active_app_id == game.app_id => {
-            app.auto_session_status = format!("tracking {}", truncate(&game.name, 28));
+            app.auto_session_status = language.tracking(&truncate(&game.name, 28));
         }
         (Some(_), Some(game)) => {
             let mut log = finish_active_session(app);
@@ -965,12 +1001,12 @@ fn sync_auto_steam_session(app: &mut App) {
         }
         (Some(_), None) => {
             let log = finish_active_session(app);
-            app.auto_session_status = "auto session ended".to_string();
+            app.auto_session_status = language.auto_session_ended().to_string();
             append_background_action(app, "steam_auto_detect_end", log);
         }
         (None, Some(game)) => start_auto_detected_session(app, game),
         (None, None) => {
-            app.auto_session_status = "auto detect armed".to_string();
+            app.auto_session_status = language.auto_detect_armed().to_string();
         }
     }
 }
@@ -981,7 +1017,7 @@ fn should_ignore_detected_game(app: &mut App, detected: Option<&SteamGame>) -> b
     };
 
     if detected.is_some_and(|game| game.app_id == ignored_app_id) {
-        app.auto_session_status = "auto detect paused for ended game".to_string();
+        app.auto_session_status = app.config.ui.language.auto_detect_paused().to_string();
         return true;
     }
 
@@ -994,36 +1030,41 @@ fn start_auto_detected_session(app: &mut App, game: SteamGame) {
 }
 
 fn start_auto_detected_session_with_log(app: &mut App, game: SteamGame, mut log: Vec<String>) {
+    let language = app.config.ui.language;
     app.auto_session_ignore_app_id = None;
     app.session.start_detected(&game);
-    app.auto_session_status = format!("detected {}", truncate(&game.name, 28));
+    app.auto_session_status = language.detected(&truncate(&game.name, 28));
     log.push(format!(
-        "  Auto-detected Steam game: {} (#{})",
-        game.name, game.app_id
+        "  {}: {} (#{})",
+        language.auto_detected_game(),
+        game.name,
+        game.app_id
     ));
-    log.push("  Sesion iniciada automaticamente".to_string());
+    log.push(format!("  {}", language.session_started_auto()));
     append_background_action(app, "steam_auto_detect_start", log);
 }
 
 fn append_background_action(app: &mut App, event: &str, mut log: Vec<String>) {
     let profile_name = app.config.active_profile_name().to_string();
-    append_action_history(&mut log, event, &profile_name);
+    append_action_history(&mut log, event, &profile_name, app.config.ui.language);
     refresh_history_if_visible(app);
 }
 
 fn run_overdrive(app: &mut App) {
+    let language = app.config.ui.language;
     let profile = app.config.active_profile().clone();
     let profile_name = app.config.active_profile_name().to_string();
-    let mut output = action_lines(&activate_chaos_mode(&profile));
-    append_action_history(&mut output, "overdrive", &profile_name);
+    let mut output = action_lines(&activate_chaos_mode(&profile, language));
+    append_action_history(&mut output, "overdrive", &profile_name, language);
     show_output(app, output);
 }
 
 fn run_restore(app: &mut App) {
+    let language = app.config.ui.language;
     let profile = app.config.active_profile().clone();
     let profile_name = app.config.active_profile_name().to_string();
-    let mut output = action_lines(&restore_system(&profile));
-    append_action_history(&mut output, "restore", &profile_name);
+    let mut output = action_lines(&restore_system(&profile, language));
+    append_action_history(&mut output, "restore", &profile_name, language);
     show_output(app, output);
 }
 
@@ -1051,92 +1092,127 @@ fn run_selected_steam_client_action(
         return;
     };
 
+    let language = app.config.ui.language;
     let profile_name = app.config.active_profile_name().to_string();
     let mut log = vec![
         format!("\u{f1b6} {title}: {} (#{})", game.name, game.app_id),
-        format!("  Cliente: {protocol}/{}", game.app_id),
-        format!("  Biblioteca: {}", game.library_dir.display()),
+        format!("  {}: {protocol}/{}", language.client_label(), game.app_id),
+        format!(
+            "  {}: {}",
+            language.library_label(),
+            game.library_dir.display()
+        ),
     ];
 
     if action(&game) {
-        log.push("  \u{f00c} Steam URI enviado".to_string());
+        log.push(format!("  \u{f00c} {}", language.steam_uri_sent()));
     } else {
-        log.push(format!("  \u{f071} No se pudo invocar {protocol}"));
+        log.push(format!(
+            "  \u{f071} {} {protocol}",
+            language.steam_uri_failed()
+        ));
     }
 
-    append_action_history(&mut log, event, &profile_name);
+    append_action_history(&mut log, event, &profile_name, language);
     show_output(app, log);
 }
 
 fn run_steam_install(app: &mut App) {
+    let title = app.config.ui.language.steam_install_title();
     run_selected_steam_client_action(
         app,
         "steam_install_requested",
-        "Instalar desde Steam",
+        title,
         "steam://install",
         install_steam_game,
     );
 }
 
 fn run_steam_validate(app: &mut App) {
+    let title = app.config.ui.language.steam_validate_title();
     run_selected_steam_client_action(
         app,
         "steam_validate_requested",
-        "Validar archivos",
+        title,
         "steam://validate",
         validate_steam_game,
     );
 }
 
 fn run_steam_properties(app: &mut App) {
+    let title = app.config.ui.language.steam_properties_title();
     run_selected_steam_client_action(
         app,
         "steam_properties_opened",
-        "Abrir propiedades",
+        title,
         "steam://gameproperties",
         open_steam_game_properties,
     );
 }
 
 fn run_steam_downloads(app: &mut App) {
+    let language = app.config.ui.language;
     let profile_name = app.config.active_profile_name().to_string();
     let mut log = vec![
-        "\u{f1b6} Abriendo descargas de Steam".to_string(),
-        "  Cliente: steam://open/downloads".to_string(),
+        format!("\u{f1b6} {}", language.steam_downloads_title()),
+        format!("  {}: steam://open/downloads", language.client_label()),
     ];
 
     if open_steam_downloads() {
-        log.push("  \u{f00c} Steam URI enviado".to_string());
+        log.push(format!("  \u{f00c} {}", language.steam_uri_sent()));
     } else {
-        log.push("  \u{f071} No se pudo invocar steam://open/downloads".to_string());
+        log.push(format!(
+            "  \u{f071} {} steam://open/downloads",
+            language.steam_uri_failed()
+        ));
     }
 
-    append_action_history(&mut log, "steam_downloads_opened", &profile_name);
+    append_action_history(&mut log, "steam_downloads_opened", &profile_name, language);
     show_output(app, log);
 }
 
 fn run_steam_uninstall(app: &mut App, game: SteamGame) {
+    let language = app.config.ui.language;
     let profile_name = app.config.active_profile_name().to_string();
     let mut log = vec![
         format!(
-            "\u{f1b6} Desinstalar desde Steam: {} (#{})",
-            game.name, game.app_id
+            "\u{f1b6} {}: {} (#{})",
+            language.steam_uninstall_action_title(),
+            game.name,
+            game.app_id
         ),
-        format!("  Cliente: steam://uninstall/{}", game.app_id),
-        format!("  Instalacion: {}", game.install_dir.display()),
+        format!(
+            "  {}: steam://uninstall/{}",
+            language.client_label(),
+            game.app_id
+        ),
+        format!(
+            "  {}: {}",
+            language.install_path_label(),
+            game.install_dir.display()
+        ),
     ];
 
     if uninstall_steam_game(&game) {
-        log.push("  \u{f00c} Confirmacion de Steam abierta".to_string());
+        log.push(format!("  \u{f00c} {}", language.steam_uninstall_opened()));
     } else {
-        log.push("  \u{f071} No se pudo invocar steam://uninstall".to_string());
+        log.push(format!(
+            "  \u{f071} {} steam://uninstall",
+            language.steam_uri_failed()
+        ));
     }
 
-    append_action_history(&mut log, "steam_uninstall_requested", &profile_name);
+    append_action_history(
+        &mut log,
+        "steam_uninstall_requested",
+        &profile_name,
+        language,
+    );
     show_output(app, log);
 }
 
 fn launch_steam_game_with_overdrive(app: &mut App, game: SteamGame) {
+    let language = app.config.ui.language;
     let mut log = Vec::new();
     if app.session.active.is_some() {
         log.extend(finish_active_session(app));
@@ -1145,29 +1221,35 @@ fn launch_steam_game_with_overdrive(app: &mut App, game: SteamGame) {
 
     let profile = app.config.active_profile().clone();
     let profile_name = app.config.active_profile_name().to_string();
-    log.extend(action_lines(&activate_chaos_mode(&profile)));
+    log.extend(action_lines(&activate_chaos_mode(&profile, language)));
     log.push(String::new());
 
     log.push(format!(
-        "\u{f11b} Lanzando {} (#{})",
-        game.name, game.app_id
+        "\u{f11b} {} {} (#{})",
+        language.launching(),
+        game.name,
+        game.app_id
     ));
     if launch_steam_game(&game) {
-        log.push("  \u{f00c} Steam launch URI enviado".to_string());
+        log.push(format!("  \u{f00c} {}", language.steam_launch_uri_sent()));
     } else {
-        log.push("  \u{f071} No se pudo invocar steam://run".to_string());
+        log.push(format!(
+            "  \u{f071} {} steam://run",
+            language.steam_uri_failed()
+        ));
     }
 
     app.auto_session_ignore_app_id = None;
     app.session.start(&game, true);
-    app.auto_session_status = "manual session active".to_string();
-    log.push("  \u{f017} Sesion iniciada".to_string());
+    app.auto_session_status = language.manual_session_active().to_string();
+    log.push(format!("  \u{f017} {}", language.session_started()));
 
-    append_action_history(&mut log, "steam_overdrive_launch", &profile_name);
+    append_action_history(&mut log, "steam_overdrive_launch", &profile_name, language);
     show_output(app, log);
 }
 
 fn launch_steam_game_without_overdrive(app: &mut App, game: SteamGame) {
+    let language = app.config.ui.language;
     let mut log = Vec::new();
     let profile_name = app.config.active_profile_name().to_string();
     if app.session.active.is_some() {
@@ -1176,35 +1258,42 @@ fn launch_steam_game_without_overdrive(app: &mut App, game: SteamGame) {
     }
 
     log.push(format!(
-        "\u{f11b} Lanzando {} (#{})",
-        game.name, game.app_id
+        "\u{f11b} {} {} (#{})",
+        language.launching(),
+        game.name,
+        game.app_id
     ));
     if launch_steam_game(&game) {
-        log.push("  \u{f00c} Steam launch URI enviado".to_string());
+        log.push(format!("  \u{f00c} {}", language.steam_launch_uri_sent()));
     } else {
-        log.push("  \u{f071} No se pudo invocar steam://run".to_string());
+        log.push(format!(
+            "  \u{f071} {} steam://run",
+            language.steam_uri_failed()
+        ));
     }
 
     app.auto_session_ignore_app_id = None;
     app.session.start(&game, false);
-    app.auto_session_status = "manual session active".to_string();
-    log.push("  \u{f017} Sesion iniciada".to_string());
+    app.auto_session_status = language.manual_session_active().to_string();
+    log.push(format!("  \u{f017} {}", language.session_started()));
 
-    append_action_history(&mut log, "steam_launch", &profile_name);
+    append_action_history(&mut log, "steam_launch", &profile_name, language);
     show_output(app, log);
 }
 
 fn finish_active_session(app: &mut App) -> Vec<String> {
+    let language = app.config.ui.language;
     let mut log = Vec::new();
     if let Some(session) = app.session.stop() {
         log.push(format!(
-            "\u{f017} Sesion cerrada: {} / {}",
+            "\u{f017} {}: {} / {}",
+            language.session_closed_prefix(),
             session.name,
             format_duration(Duration::from_secs(session.seconds))
         ));
-        append_session_history(&mut log, &session);
+        append_session_history(&mut log, &session, language);
     } else {
-        log.push("  No hay sesion activa.".to_string());
+        log.push(language.no_active_session().to_string());
     }
     log
 }
@@ -1214,9 +1303,9 @@ fn finish_active_session_from_user(app: &mut App) -> Vec<String> {
     let output = finish_active_session(app);
     app.auto_session_ignore_app_id = ignored_app_id;
     app.auto_session_status = if app.auto_session_ignore_app_id.is_some() {
-        "auto detect paused for ended game".to_string()
+        app.config.ui.language.auto_detect_paused().to_string()
     } else {
-        "auto detect armed".to_string()
+        app.config.ui.language.auto_detect_armed().to_string()
     };
     output
 }
@@ -1331,7 +1420,7 @@ fn handle_event(app: &mut App, event: Event) -> bool {
                 KeyCode::Char('r') | KeyCode::Char('R') => {
                     show_output(
                         app,
-                        vec!["  Telemetria en segundo plano: actualizando snapshot...".to_string()],
+                        vec![app.config.ui.language.telemetry_refreshing().to_string()],
                     );
                 }
                 KeyCode::Char('m') | KeyCode::Char('M') => {
@@ -1619,7 +1708,7 @@ mod tests {
             exe_path: Some("C:\\Program Files\\Dropbox\\Dropbox.exe".to_string()),
         };
 
-        let lines = format_target_process_preview("Dropbox.exe", &group);
+        let lines = format_target_process_preview("Dropbox.exe", &group, Language::Spanish);
 
         assert!(lines[1].contains("Dropbox.exe"));
     }
@@ -1632,7 +1721,7 @@ mod tests {
             exe_path: None,
         };
 
-        let lines = format_target_process_preview("helper.exe", &group);
+        let lines = format_target_process_preview("helper.exe", &group, Language::Spanish);
 
         assert!(lines[1].contains("ruta no disponible"));
     }

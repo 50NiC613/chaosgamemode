@@ -5,6 +5,7 @@ use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 use crate::config::BoostProfile;
 use crate::hardware::{HardwareState, read_hardware_state};
+use crate::i18n::Language;
 use crate::metrics::percent;
 
 const HIGH_PERF_GUID: &str = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
@@ -183,11 +184,11 @@ fn get_services_running(services: &[String]) -> usize {
     out.trim().parse().unwrap_or(0)
 }
 
-fn kill_processes(profile: &BoostProfile) -> Vec<ActionReport> {
+fn kill_processes(profile: &BoostProfile, language: Language) -> Vec<ActionReport> {
     let mut log = Vec::new();
     let processes = filtered_process_patterns(profile);
     if processes.is_empty() {
-        log.push(ActionReport::info("perfil sin procesos configurados"));
+        log.push(ActionReport::info(language.system_info_no_processes()));
         return log;
     }
 
@@ -205,19 +206,19 @@ fn kill_processes(profile: &BoostProfile) -> Vec<ActionReport> {
     let out = run_powershell(&script);
     for line in out.lines() {
         if !line.is_empty() {
-            log.push(ActionReport::success(format!("proceso cerrado: {line}")));
+            log.push(ActionReport::success(language.system_process_closed(line)));
         }
     }
     if log.is_empty() {
-        log.push(ActionReport::info("ningun proceso pesado encontrado"));
+        log.push(ActionReport::info(language.system_no_heavy_process()));
     }
     log
 }
 
-fn stop_services(services: &[String]) -> Vec<ActionReport> {
+fn stop_services(services: &[String], language: Language) -> Vec<ActionReport> {
     let mut log = Vec::new();
     if services.is_empty() {
-        log.push(ActionReport::info("perfil sin servicios configurados"));
+        log.push(ActionReport::info(language.system_no_services()));
         return log;
     }
 
@@ -234,16 +235,16 @@ fn stop_services(services: &[String]) -> Vec<ActionReport> {
     let out = run_powershell(&script);
     for line in out.lines() {
         if !line.is_empty() {
-            log.push(ActionReport::success(format!("servicio detenido: {line}")));
+            log.push(ActionReport::success(language.system_service_stopped(line)));
         }
     }
     if log.is_empty() {
-        log.push(ActionReport::info("servicios ya optimizados"));
+        log.push(ActionReport::info(language.system_services_optimized()));
     }
     log
 }
 
-fn priority_steam() -> Vec<ActionReport> {
+fn priority_steam(language: Language) -> Vec<ActionReport> {
     let mut log = Vec::new();
     let script = run_powershell(
         "$p = Get-Process -Name 'steam' -ErrorAction SilentlyContinue; \
@@ -257,92 +258,96 @@ fn priority_steam() -> Vec<ActionReport> {
          }",
     );
     if script == "NO_STEAM" {
-        log.push(ActionReport::warning(
-            "no se encontro Steam, abrelo manualmente",
-        ));
+        log.push(ActionReport::warning(language.steam_not_found_manual()));
     } else if script == "OK" {
-        log.push(ActionReport::success("Steam ya activo, prioridad asignada"));
+        log.push(ActionReport::success(language.steam_already_active()));
     } else {
-        log.push(ActionReport::success("Steam abierto automaticamente"));
+        log.push(ActionReport::success(language.steam_opened()));
     }
     log
 }
 
-fn kill_explorer() -> Vec<ActionReport> {
+fn kill_explorer(language: Language) -> Vec<ActionReport> {
     let mut log = Vec::new();
     let script = run_powershell(
         "$p = Get-Process -Name 'explorer' -ErrorAction SilentlyContinue; \
          if ($p) { Stop-Process -Name 'explorer' -Force; Write-Output 'KILLED' }",
     );
     if script == "KILLED" {
-        log.push(ActionReport::success(
-            "explorer.exe suspendido (~400 MB liberados)",
-        ));
+        log.push(ActionReport::success(language.explorer_stopped()));
     }
     log
 }
 
-fn start_explorer() -> Vec<ActionReport> {
+fn start_explorer(language: Language) -> Vec<ActionReport> {
     let mut log = Vec::new();
     let script = run_powershell(
         "if (-not (Get-Process -Name 'explorer' -ErrorAction SilentlyContinue)) { \
          Start-Process 'explorer.exe'; Write-Output 'STARTED' }",
     );
     if script == "STARTED" {
-        log.push(ActionReport::success("explorer.exe reiniciado"));
+        log.push(ActionReport::success(language.explorer_started()));
     }
     log
 }
 
-pub(crate) fn activate_chaos_mode(profile: &BoostProfile) -> Vec<ActionReport> {
+pub(crate) fn activate_chaos_mode(profile: &BoostProfile, language: Language) -> Vec<ActionReport> {
     let mut log = Vec::new();
     log.push(ActionReport::info(format!(
-        "perfil activo: {}",
+        "{}: {}",
+        language.active_profile_line(),
         profile.name
     )));
     if profile.set_high_performance {
-        log.push(ActionReport::info("plan de energia: Alto Rendimiento"));
+        log.push(ActionReport::info(format!(
+            "{}: {}",
+            language.power_plan_line(),
+            language.high_performance_plan()
+        )));
         set_power_plan(HIGH_PERF_GUID);
     } else {
-        log.push(ActionReport::info("plan de energia sin cambios"));
+        log.push(ActionReport::info(format!(
+            "{}: {}",
+            language.power_plan_line(),
+            language.no_changes()
+        )));
     }
 
-    log.push(ActionReport::info("eliminando procesos en segundo plano"));
-    log.extend(kill_processes(profile));
+    log.push(ActionReport::info(language.killing_background_processes()));
+    log.extend(kill_processes(profile, language));
 
-    log.push(ActionReport::info("deteniendo servicios"));
-    log.extend(stop_services(&profile.services));
+    log.push(ActionReport::info(language.stopping_services()));
+    log.extend(stop_services(&profile.services, language));
 
     if profile.prioritize_steam {
         log.push(ActionReport::info("Steam"));
-        log.extend(priority_steam());
+        log.extend(priority_steam(language));
     }
 
     if profile.kill_explorer {
-        log.push(ActionReport::info("liberando recursos del sistema"));
-        log.extend(kill_explorer());
+        log.push(ActionReport::info(language.freeing_system_resources()));
+        log.extend(kill_explorer(language));
     } else {
-        log.push(ActionReport::info(
-            "explorer se mantiene activo en este perfil",
-        ));
+        log.push(ActionReport::info(language.explorer_kept_report()));
     }
 
-    log.push(ActionReport::success("CHAOS GAME MODE ACTIVADO"));
+    log.push(ActionReport::success(language.overdrive_activated()));
     log
 }
 
-pub(crate) fn restore_system(profile: &BoostProfile) -> Vec<ActionReport> {
+pub(crate) fn restore_system(profile: &BoostProfile, language: Language) -> Vec<ActionReport> {
     let mut log = Vec::new();
     log.push(ActionReport::info(format!(
-        "perfil activo: {}",
+        "{}: {}",
+        language.active_profile_line(),
         profile.name
     )));
-    log.push(ActionReport::info("restaurando interfaz de Windows"));
-    log.extend(start_explorer());
+    log.push(ActionReport::info(language.restoring_windows_shell()));
+    log.extend(start_explorer(language));
 
-    log.push(ActionReport::info("restaurando servicios"));
+    log.push(ActionReport::info(language.restoring_services()));
     if profile.services.is_empty() {
-        log.push(ActionReport::info("perfil sin servicios configurados"));
+        log.push(ActionReport::info(language.system_no_services()));
     } else {
         let names = powershell_array(&profile.services);
         let script = run_powershell(&format!(
@@ -357,16 +362,20 @@ pub(crate) fn restore_system(profile: &BoostProfile) -> Vec<ActionReport> {
         ));
         for line in script.lines() {
             if !line.is_empty() {
-                log.push(ActionReport::success(format!("servicio iniciado: {line}")));
+                log.push(ActionReport::success(language.system_service_started(line)));
             }
         }
     }
 
-    log.push(ActionReport::info("plan de energia: Balanceado"));
+    log.push(ActionReport::info(format!(
+        "{}: {}",
+        language.power_plan_line(),
+        language.balanced_plan()
+    )));
     set_power_plan(BALANCED_GUID);
 
-    log.push(ActionReport::success("SISTEMA RESTAURADO"));
-    log.push(ActionReport::warning("apps cerradas no se reabren solas"));
+    log.push(ActionReport::success(language.system_restored()));
+    log.push(ActionReport::warning(language.closed_apps_not_reopened()));
     log
 }
 
