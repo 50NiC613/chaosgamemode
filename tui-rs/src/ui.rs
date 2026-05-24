@@ -330,6 +330,11 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
 
     // Tab navigation + theme + quit (always visible)
     spans.extend([
+        keycap(theme, "3"),
+        Span::styled(
+            format!(" {} ", lang.profile()),
+            Style::new().fg(theme.muted),
+        ),
         keycap(theme, "M"),
         Span::styled(format!(" {} ", lang.theme()), Style::new().fg(theme.muted)),
         keycap(theme, "TAB"),

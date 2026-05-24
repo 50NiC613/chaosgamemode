@@ -1,3 +1,4 @@
+config_version = 2
 active_profile = "balanced"
 
 [telemetry]
@@ -97,17 +98,7 @@ hidden_processes = [
     "defender",
     "antimalware",
 ]
-services = [
-    "SysMain",
-    "WSearch",
-    "DiagTrack",
-    "Spooler",
-    "FontCache",
-    "PcaSvc",
-    "UsoSvc",
-    "Themes",
-    "WpnService",
-]
+services = []
 processes = [
     "chrome",
     "msedge",

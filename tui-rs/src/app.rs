@@ -395,6 +395,12 @@ struct HistoryView {
     status: String,
 }
 
+#[derive(Clone, Copy)]
+struct OverdriveImpact {
+    target_groups: usize,
+    waste_mb: f64,
+}
+
 pub(crate) fn run() -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -1141,6 +1147,18 @@ fn restart_telemetry(app: &mut App) {
     );
 }
 
+fn refresh_app_state_now(app: &mut App) {
+    let mut sys = System::new_all();
+    let state = refresh_system_state(&mut sys, None, true, true, app.config.active_profile());
+    apply_system_state(app, state);
+}
+
+fn cycle_active_profile(app: &mut App) {
+    app.config.cycle_profile();
+    restart_telemetry(app);
+    refresh_app_state_now(app);
+}
+
 fn toggle_selected_process_protection(app: &mut App) {
     let Some(name) = selected_process_name(app) else {
         return;
@@ -1651,11 +1669,48 @@ fn append_background_action(app: &mut App, event: &str, mut log: Vec<String>) {
     refresh_history_if_visible(app);
 }
 
-fn run_overdrive(app: &mut App) {
+fn overdrive_impact_from_state(state: &SystemState) -> OverdriveImpact {
+    OverdriveImpact {
+        target_groups: state.processes.len(),
+        waste_mb: state.total_waste_mb,
+    }
+}
+
+fn overdrive_impact_line(
+    language: Language,
+    before: OverdriveImpact,
+    after: OverdriveImpact,
+) -> String {
+    match language {
+        Language::Spanish => format!(
+            "  impacto: {:.0} -> {:.0} MB removibles / {} -> {} targets",
+            before.waste_mb, after.waste_mb, before.target_groups, after.target_groups
+        ),
+        Language::English => format!(
+            "  impact: {:.0} -> {:.0} MB removable / {} -> {} targets",
+            before.waste_mb, after.waste_mb, before.target_groups, after.target_groups
+        ),
+    }
+}
+
+fn perform_overdrive(app: &mut App) -> Vec<String> {
     let language = app.config.ui.language;
     let profile = app.config.active_profile().clone();
-    let profile_name = app.config.active_profile_name().to_string();
+    let before = overdrive_impact_from_state(&app.state);
     let mut output = action_lines(&activate_chaos_mode(&profile, language));
+
+    refresh_app_state_now(app);
+    let after = overdrive_impact_from_state(&app.state);
+    output.push(String::new());
+    output.push(overdrive_impact_line(language, before, after));
+
+    output
+}
+
+fn run_overdrive(app: &mut App) {
+    let language = app.config.ui.language;
+    let profile_name = app.config.active_profile_name().to_string();
+    let mut output = perform_overdrive(app);
     append_action_history(&mut output, "overdrive", &profile_name, language);
     show_output(app, output);
 }
@@ -1820,9 +1875,8 @@ fn launch_steam_game_with_overdrive(app: &mut App, game: SteamGame) {
         log.push(String::new());
     }
 
-    let profile = app.config.active_profile().clone();
     let profile_name = app.config.active_profile_name().to_string();
-    log.extend(action_lines(&activate_chaos_mode(&profile, language)));
+    log.extend(perform_overdrive(app));
     log.push(String::new());
 
     log.push(format!(
@@ -2057,6 +2111,9 @@ fn handle_event(app: &mut App, event: Event) -> bool {
                 }
                 KeyCode::Char('2') => {
                     run_restore(app);
+                }
+                KeyCode::Char('3') => {
+                    cycle_active_profile(app);
                 }
                 KeyCode::Char('r') | KeyCode::Char('R') => {
                     show_output(
@@ -2512,5 +2569,22 @@ mod tests {
             guard.observe(alert_at, Some(session_start), false, Some(3.0)),
             None
         );
+    }
+
+    #[test]
+    fn overdrive_impact_line_should_compare_before_and_after() {
+        let line = overdrive_impact_line(
+            Language::English,
+            OverdriveImpact {
+                target_groups: 7,
+                waste_mb: 2048.0,
+            },
+            OverdriveImpact {
+                target_groups: 2,
+                waste_mb: 256.0,
+            },
+        );
+
+        assert_eq!(line, "  impact: 2048 -> 256 MB removable / 7 -> 2 targets");
     }
 }

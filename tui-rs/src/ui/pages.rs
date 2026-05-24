@@ -574,6 +574,12 @@ fn render_boost_actions(frame: &mut Frame, app: &App, area: Rect) {
         ),
         command_line(
             theme,
+            "3",
+            lang.command_cycle_profile(),
+            lang.command_cycle_profile_detail(),
+        ),
+        command_line(
+            theme,
             "R",
             lang.command_refresh_telemetry(),
             lang.command_refresh_telemetry_detail(),

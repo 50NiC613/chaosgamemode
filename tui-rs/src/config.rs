@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use crate::i18n::Language;
 use crate::overlay::{OverlayBackend, OverlayConfig};
 
+const CONFIG_SCHEMA_VERSION: u32 = 2;
+
 #[derive(Clone)]
 pub(crate) struct AppConfig {
     path: Option<PathBuf>,
@@ -18,6 +20,7 @@ pub(crate) struct AppConfig {
     pub(crate) overlay: OverlayConfig,
     pub(crate) ui: UiConfig,
     pub(crate) status: String,
+    migration_pending: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +56,7 @@ pub(crate) struct UiConfig {
 
 #[derive(Default, Deserialize)]
 struct ConfigFile {
+    config_version: Option<u32>,
     active_profile: Option<String>,
     telemetry: Option<TelemetryFile>,
     overlay: Option<OverlayFile>,
@@ -112,7 +116,15 @@ impl AppConfig {
                 toml::from_str::<ConfigFile>(&contents)
                     .map_err(|err| format!("config.toml invalido: {err}"))
             }) {
-            Ok(file) => Self::from_file(file, path),
+            Ok(file) => {
+                let mut config = Self::from_file(file, path);
+                if config.migration_pending {
+                    config.persist(
+                        "config migrated: balanced profile keeps services running".to_string(),
+                    );
+                }
+                config
+            }
             Err(err) => Self {
                 status: format!("config error: {err}; usando defaults"),
                 ..Self::default()
@@ -237,7 +249,13 @@ impl AppConfig {
         self.persist(format!("overlay: {state}"));
     }
 
+    pub(crate) fn cycle_profile(&mut self) {
+        self.active_profile = self.active_profile.next();
+        self.persist(format!("profile: {}", self.active_profile.as_str()));
+    }
+
     fn from_file(file: ConfigFile, path: PathBuf) -> Self {
+        let schema_version = file.config_version.unwrap_or(1);
         let mut config = Self {
             path: Some(path.clone()),
             ..Self::default()
@@ -265,7 +283,14 @@ impl AppConfig {
                 config.aggressive.apply_override(aggressive);
             }
         }
-        config.status = format!("config loaded: {}", path.display());
+        if schema_version < CONFIG_SCHEMA_VERSION {
+            config.apply_legacy_migrations(schema_version);
+        }
+        config.status = if config.migration_pending {
+            format!("config migrated: {}", path.display())
+        } else {
+            format!("config loaded: {}", path.display())
+        };
         config
     }
 
@@ -294,6 +319,7 @@ impl AppConfig {
         match fs::write(path, contents) {
             Ok(()) => {
                 self.status = success_status;
+                self.migration_pending = false;
             }
             Err(err) => {
                 self.status = format!("config save error: {err}");
@@ -303,6 +329,7 @@ impl AppConfig {
 
     fn to_file(&self) -> ConfigFileOut {
         ConfigFileOut {
+            config_version: CONFIG_SCHEMA_VERSION,
             active_profile: self.active_profile.as_str().to_string(),
             telemetry: TelemetryFileOut {
                 telemetry_ms: self.telemetry.telemetry_rate.as_millis() as u64,
@@ -324,6 +351,13 @@ impl AppConfig {
             },
         }
     }
+
+    fn apply_legacy_migrations(&mut self, schema_version: u32) {
+        if schema_version < 2 && self.balanced.services == default_services() {
+            self.balanced.services.clear();
+            self.migration_pending = true;
+        }
+    }
 }
 
 impl Default for AppConfig {
@@ -338,6 +372,7 @@ impl Default for AppConfig {
             overlay: OverlayConfig::default(),
             ui: UiConfig::default(),
             status: "config defaults".to_string(),
+            migration_pending: false,
         }
     }
 }
@@ -357,6 +392,14 @@ impl ProfileName {
             Self::Safe => "safe",
             Self::Balanced => "balanced",
             Self::Aggressive => "aggressive",
+        }
+    }
+
+    const fn next(self) -> Self {
+        match self {
+            Self::Safe => Self::Balanced,
+            Self::Balanced => Self::Aggressive,
+            Self::Aggressive => Self::Safe,
         }
     }
 }
@@ -427,7 +470,7 @@ impl BoostProfile {
             processes: default_processes(),
             protected_processes: default_protected_processes(),
             hidden_processes: default_hidden_processes(),
-            services: default_services(),
+            services: Vec::new(),
             set_high_performance: true,
             prioritize_steam: true,
             kill_explorer: false,
@@ -537,6 +580,7 @@ impl BoostProfile {
 
 #[derive(Serialize)]
 struct ConfigFileOut {
+    config_version: u32,
     active_profile: String,
     telemetry: TelemetryFileOut,
     overlay: OverlayFileOut,
@@ -845,6 +889,13 @@ mod tests {
     }
 
     #[test]
+    fn profile_name_should_cycle_through_safety_levels() {
+        assert_eq!(ProfileName::Safe.next(), ProfileName::Balanced);
+        assert_eq!(ProfileName::Balanced.next(), ProfileName::Aggressive);
+        assert_eq!(ProfileName::Aggressive.next(), ProfileName::Safe);
+    }
+
+    #[test]
     fn telemetry_override_should_clamp_fast_values() {
         let telemetry = TelemetryConfig::default().with_override(TelemetryFile {
             telemetry_ms: Some(1),
@@ -889,6 +940,74 @@ mod tests {
         );
 
         assert_eq!(config.ui.language, Language::English);
+    }
+
+    #[test]
+    fn balanced_profile_should_keep_services_running_by_default() {
+        assert!(BoostProfile::balanced().services.is_empty());
+        assert!(!BoostProfile::balanced().kill_explorer);
+    }
+
+    #[test]
+    fn legacy_config_should_migrate_default_balanced_services() {
+        let config = AppConfig::from_file(
+            ConfigFile {
+                profiles: Some(ProfilesFile {
+                    balanced: Some(BoostProfileFile {
+                        services: Some(default_services()),
+                        ..BoostProfileFile::default()
+                    }),
+                    ..ProfilesFile::default()
+                }),
+                ..ConfigFile::default()
+            },
+            PathBuf::from("legacy.toml"),
+        );
+
+        assert!(config.balanced.services.is_empty());
+        assert!(config.migration_pending);
+    }
+
+    #[test]
+    fn current_config_should_keep_custom_balanced_services() {
+        let config = AppConfig::from_file(
+            ConfigFile {
+                config_version: Some(CONFIG_SCHEMA_VERSION),
+                profiles: Some(ProfilesFile {
+                    balanced: Some(BoostProfileFile {
+                        services: Some(vec!["CustomSvc".to_string()]),
+                        ..BoostProfileFile::default()
+                    }),
+                    ..ProfilesFile::default()
+                }),
+                ..ConfigFile::default()
+            },
+            PathBuf::from("current.toml"),
+        );
+
+        assert_eq!(config.balanced.services, vec!["CustomSvc"]);
+        assert!(!config.migration_pending);
+    }
+
+    #[test]
+    fn cycle_profile_should_persist_next_profile() {
+        let dir = std::env::temp_dir().join(format!(
+            "chaosgamemode-profile-cycle-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("profile cycle fixture dir should be writable");
+        let path = dir.join("config.toml");
+        fs::write(&path, "active_profile = \"balanced\"\n")
+            .expect("profile cycle fixture should be writable");
+
+        let mut config = AppConfig::from_file(ConfigFile::default(), path.clone());
+        config.cycle_profile();
+
+        let contents = fs::read_to_string(&path).expect("profile cycle fixture should be readable");
+        assert!(contents.contains("active_profile = \"aggressive\""));
+
+        fs::remove_dir_all(dir).expect("profile cycle fixture dir should be removable");
     }
 
     #[test]

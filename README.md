@@ -184,6 +184,7 @@ Important sections:
 
 ```toml
 active_profile = "balanced"
+config_version = 2
 
 [ui]
 language = "es" # es or en
@@ -202,8 +203,10 @@ update_ms = 100
 Profiles:
 
 - `safe`: conservative cleanup, keeps Explorer alive, no service stop list by default.
-- `balanced`: recommended daily profile.
-- `aggressive`: strongest cleanup, can restart Explorer when configured.
+- `balanced`: recommended daily profile; closes known background apps but keeps Windows services running by default.
+- `aggressive`: strongest cleanup, can stop configured services and restart Explorer when configured.
+
+Press `3` inside the TUI to cycle `safe -> balanced -> aggressive` without editing `config.toml`.
 
 Process policy:
 
@@ -257,6 +260,7 @@ Chaos Game Mode is intentionally local and reversible:
 - Protected processes are excluded from cleanup.
 - GPU/OSD/control tools such as AMD/Radeon, RTSS, RivaTuner, MSI Afterburner, and SteelSeries are protected internally even if an older config accidentally lists them as cleanup targets.
 - Windows system processes and Defender-related entries are hidden from normal process targeting.
+- Existing old configs are migrated so the default `balanced` profile no longer stops services; custom service lists are kept.
 - Restore brings back shell/services and balanced power behavior.
 
 ### Roadmap
@@ -398,6 +402,14 @@ Secciones clave:
 - `[telemetry]`: frecuencia de CPU/RAM/procesos/plataforma.
 - `[overlay]`: backend RTSS, activacion del OSD y frecuencia de actualizacion.
 - `[profiles.safe]`, `[profiles.balanced]`, `[profiles.aggressive]`: perfiles de optimizacion.
+
+Perfiles:
+
+- `safe`: limpieza conservadora, no detiene servicios.
+- `balanced`: recomendado para uso diario; cierra apps de fondo conocidas, pero ya no detiene servicios por defecto.
+- `aggressive`: limpieza fuerte; puede detener servicios configurados y reiniciar Explorer si se activa.
+
+Pulsa `3` dentro de la TUI para alternar `safe -> balanced -> aggressive` sin editar `config.toml`.
 
 Politica de procesos:
 

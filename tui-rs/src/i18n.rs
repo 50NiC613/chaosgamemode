@@ -1805,6 +1805,20 @@ impl Language {
         }
     }
 
+    pub(crate) const fn command_cycle_profile(self) -> &'static str {
+        match self {
+            Self::Spanish => "Cambiar perfil",
+            Self::English => "Cycle Profile",
+        }
+    }
+
+    pub(crate) const fn command_cycle_profile_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "safe, balanced, aggressive",
+            Self::English => "safe, balanced, aggressive",
+        }
+    }
+
     pub(crate) const fn command_refresh_telemetry(self) -> &'static str {
         match self {
             Self::Spanish => "Refrescar telemetria",
