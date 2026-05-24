@@ -103,6 +103,12 @@ Run from any new terminal:
 chaosgamemode
 ```
 
+Run a quick installation/RTSS diagnostic:
+
+```powershell
+chaosgamemode --doctor
+```
+
 Update the installed app after code changes:
 
 ```powershell
@@ -324,6 +330,12 @@ Ejecutar desde una terminal nueva:
 
 ```powershell
 chaosgamemode
+```
+
+Diagnostico rapido de instalacion/RTSS:
+
+```powershell
+chaosgamemode --doctor
 ```
 
 Actualizar despues de cambiar el codigo:

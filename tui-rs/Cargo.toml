@@ -1,6 +1,6 @@
 [package]
 name = "chaosgamemode"
-version = "1.3.2"
+version = "1.3.3"
 edition = "2024"
 description = "Extreme gaming optimization TUI for Windows - kill processes, free RAM, prioritize Steam"
 
