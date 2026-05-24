@@ -25,35 +25,59 @@
         <Directory Id="LocalProgramsFolder" Name="Programs">
           <Directory Id="INSTALLFOLDER" Name="ChaosGameMode">
             <Component Id="MainExecutable" Guid="{68F674E2-84CF-4D9C-A917-0597629E5950}">
+              <RegistryValue
+                Root="HKCU"
+                Key="Software\ChaosGameMode\Components"
+                Name="MainExecutable"
+                Type="integer"
+                Value="1"
+                KeyPath="yes" />
               <File
                 Id="ChaosGameModeExe"
                 Name="chaosgamemode.exe"
-                Source="$(var.PayloadDir)\chaosgamemode.exe"
-                KeyPath="yes" />
+                Source="$(var.PayloadDir)\chaosgamemode.exe" />
             </Component>
 
             <Component Id="DefaultConfig" Guid="{B6702C3A-303A-4EF3-A1B9-6E2906A710C8}" NeverOverwrite="yes">
+              <RegistryValue
+                Root="HKCU"
+                Key="Software\ChaosGameMode\Components"
+                Name="DefaultConfig"
+                Type="integer"
+                Value="1"
+                KeyPath="yes" />
               <File
                 Id="ConfigToml"
                 Name="config.toml"
-                Source="$(var.PayloadDir)\config.toml"
-                KeyPath="yes" />
+                Source="$(var.PayloadDir)\config.toml" />
             </Component>
 
             <Component Id="DefaultTheme" Guid="{3316A2B9-4DE0-4F6C-A55E-A7B3A9DCA804}" NeverOverwrite="yes">
+              <RegistryValue
+                Root="HKCU"
+                Key="Software\ChaosGameMode\Components"
+                Name="DefaultTheme"
+                Type="integer"
+                Value="1"
+                KeyPath="yes" />
               <File
                 Id="ThemeToml"
                 Name="theme.toml"
-                Source="$(var.PayloadDir)\theme.toml"
-                KeyPath="yes" />
+                Source="$(var.PayloadDir)\theme.toml" />
             </Component>
 
             <Component Id="ReadmeFile" Guid="{BF89B2E3-BA8A-4609-909C-4D40CD0267C1}">
+              <RegistryValue
+                Root="HKCU"
+                Key="Software\ChaosGameMode\Components"
+                Name="ReadmeFile"
+                Type="integer"
+                Value="1"
+                KeyPath="yes" />
               <File
                 Id="ReadmeMd"
                 Name="README.md"
-                Source="$(var.PayloadDir)\README.md"
-                KeyPath="yes" />
+                Source="$(var.PayloadDir)\README.md" />
             </Component>
 
             <Component Id="UserPathEnvironment" Guid="{D837E351-D738-4B5C-A5F2-66817C1F2EE8}">
@@ -72,6 +96,8 @@
                 Part="last"
                 Action="set"
                 System="no" />
+              <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+              <RemoveFolder Id="RemoveLocalProgramsFolder" Directory="LocalProgramsFolder" On="uninstall" />
             </Component>
           </Directory>
         </Directory>
