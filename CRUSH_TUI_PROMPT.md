@@ -274,8 +274,8 @@ Importante:
 ### Frames
 
 - Debe mostrar FPS, promedio, 1% low, frame time, samples y target actual.
-- Debe localizar estados de PresentMon y respetar `[ui] language`.
-- `R` debe refrescar deteccion de PresentMon y `E` cerrar la sesion activa.
+- Debe localizar estados de RTSS y respetar `[ui] language`.
+- `R` debe refrescar deteccion de RTSS y `E` cerrar la sesion activa.
 
 ### Procesos
 
@@ -360,7 +360,7 @@ Requisitos:
 - Los logs de Overdrive, Restore, Steam, sesiones, historial, modales y estados
   vacios deben respetar el idioma.
 - Los estados generados por subsistemas (`SteamLibrary.status`,
-  `FrameMetrics.status`, `HardwareState.status`, `PresentMonProbe.status`,
+  `FrameMetrics.status`, `HardwareState.status`, `FrameProbe.status`,
   `config.status`, `theme_status`) deben mostrarse localizados mediante helpers
   centralizados antes de renderizar.
 

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use crate::presentmon::FrameMetrics;
+use crate::frames::FrameMetrics;
 use crate::steam::SteamGame;
 use crate::system::{ProcessGroup, SystemState};
 
@@ -42,7 +42,6 @@ const NOISE_PROCESS_NAMES: &[&str] = &[
     "opencode.exe",
     "overwolf.exe",
     "powershell.exe",
-    "presentmon.exe",
     "pwsh.exe",
     "amdrssrv.exe",
     "radeonsoftware.exe",
@@ -222,11 +221,19 @@ pub(crate) fn discovery_exclusions() -> Vec<String> {
 
 pub(crate) fn is_rejected_process(process_name: &str) -> bool {
     let normalized = normalize_process_name(process_name);
-    is_exact_match(&normalized, LAUNCHER_PROCESS_NAMES)
+    is_unknown_process_name(&normalized)
+        || is_exact_match(&normalized, LAUNCHER_PROCESS_NAMES)
         || is_exact_match(&normalized, NOISE_PROCESS_NAMES)
         || GENERIC_HELPER_TERMS
             .iter()
             .any(|term| normalized.contains(term))
+}
+
+fn is_unknown_process_name(process_name: &str) -> bool {
+    matches!(
+        process_name.trim_matches(|ch| ch == '<' || ch == '>' || ch == '"' || ch == '\''),
+        "" | "unknown" | "unk" | "n/a" | "na"
+    )
 }
 
 fn score_process(
@@ -405,6 +412,22 @@ mod tests {
         };
 
         assert!(resolver.observe_frame(&metrics, &game, &state).is_none());
+    }
+
+    #[test]
+    fn resolver_should_ignore_unknown_frame_source() {
+        let game = game();
+        let state = state_with("Unknown", "", 0.0);
+        let mut resolver = GameProcessResolver::default();
+        resolver.start(&game, &SystemState::empty_for_test());
+
+        let metrics = FrameMetrics {
+            process_name: Some("Unknown".to_string()),
+            ..FrameMetrics::idle()
+        };
+
+        assert!(resolver.observe_frame(&metrics, &game, &state).is_none());
+        assert!(is_rejected_process("<unknown>"));
     }
 
     #[test]

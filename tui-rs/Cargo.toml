@@ -10,3 +10,9 @@ crossterm = "0.28"
 sysinfo = "0.32"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Memory",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }

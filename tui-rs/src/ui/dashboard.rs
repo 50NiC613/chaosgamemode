@@ -424,7 +424,7 @@ fn render_frames_idle_panel(frame: &mut Frame, app: &App, area: Rect) {
         lang.frames_resolving_target()
     } else if app.frame_capture_active() {
         lang.frames_waiting_samples()
-    } else if app.presentmon_probe.path.is_some() {
+    } else if app.frame_probe.available {
         lang.frames_capture_armed()
     } else {
         lang.frames_idle_status()

@@ -10,7 +10,6 @@ Usage:
 
 Options:
   --install-dir PATH     Install directory passed to install.ps1
-  --skip-presentmon      Do not install/check Intel.PresentMon.Console
   --no-path              Do not add/remove the install dir from the user PATH
   -h, --help             Show this help
 
@@ -35,7 +34,6 @@ esac
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 action="Install"
 install_dir=""
-skip_presentmon=0
 no_path=0
 
 while [ "$#" -gt 0 ]; do
@@ -59,10 +57,6 @@ while [ "$#" -gt 0 ]; do
             fi
             install_dir=$2
             shift 2
-            ;;
-        --skip-presentmon)
-            skip_presentmon=1
-            shift
             ;;
         --no-path)
             no_path=1
@@ -116,10 +110,6 @@ set -- -NoProfile -ExecutionPolicy Bypass -File "$ps_script" -Action "$action"
 if [ -n "$install_dir" ]; then
     install_dir=$(to_windows_path "$install_dir")
     set -- "$@" -InstallDir "$install_dir"
-fi
-
-if [ "$skip_presentmon" -eq 1 ]; then
-    set -- "$@" -SkipPresentMon
 fi
 
 if [ "$no_path" -eq 1 ]; then

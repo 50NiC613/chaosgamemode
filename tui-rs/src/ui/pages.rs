@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Style, Stylize},
+    style::{Color, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{List, ListItem, Paragraph, Sparkline, Wrap},
 };
@@ -994,6 +994,17 @@ fn render_frames_session_panel(frame: &mut Frame, app: &App, area: Rect) {
             ),
         ]));
     }
+    lines.push(Line::from(vec![
+        metric_label(theme, lang.label_overlay()),
+        metric_value(overlay_config_label(app, lang), overlay_config_color(app)),
+    ]));
+    lines.push(Line::from(vec![
+        metric_label(theme, lang.label_status()),
+        Span::styled(
+            crate::metrics::truncate(&app.overlay_status.message, 42),
+            Style::new().fg(overlay_status_color(app)),
+        ),
+    ]));
 
     let panel = Paragraph::new(Text::from(lines))
         .block(accent_block(theme, "MANGOHUD / FRAMES", theme.cyber_yellow))
@@ -1010,7 +1021,7 @@ fn render_frames_metrics_panel(frame: &mut Frame, app: &App, area: Rect) {
             lang.frames_resolving_target()
         } else if app.frame_capture_active() {
             lang.frames_waiting_samples()
-        } else if app.presentmon_probe.path.is_some() {
+        } else if app.frame_probe.available {
             lang.frames_capture_armed()
         } else {
             lang.frames_idle_status()
@@ -1381,10 +1392,10 @@ fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
     let lang = app.config.ui.language;
     let lines = vec![
         Line::from(vec![
-            metric_label(theme, lang.label_pmon()),
+            metric_label(theme, lang.label_rtss()),
             Span::styled(
-                localized_presentmon_status(&app.presentmon_probe.status, lang),
-                Style::new().fg(if app.presentmon_probe.path.is_some() {
+                localized_frame_probe_status(&app.frame_probe.status, lang),
+                Style::new().fg(if app.frame_probe.available {
                     theme.acid_green
                 } else {
                     theme.hot_red
@@ -1394,7 +1405,7 @@ fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             metric_label(theme, lang.label_source()),
             metric_value(
-                localized_source_value(app.presentmon_probe.source, lang),
+                localized_source_value(app.frame_probe.source, lang),
                 theme.cyber_yellow,
             ),
         ]),
@@ -1410,17 +1421,55 @@ fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(""),
         Line::from(vec![
+            metric_label(theme, lang.label_overlay()),
+            Span::styled(
+                crate::metrics::truncate(&app.overlay_status.message, 40),
+                Style::new().fg(overlay_status_color(app)),
+            ),
+        ]),
+        Line::from(vec![
             keycap(theme, "R"),
             Span::styled(format!(" {}  ", lang.probe()), Style::new().fg(theme.muted)),
+            keycap(theme, "S-F12"),
+            Span::styled(
+                format!(" {}  ", lang.overlay()),
+                Style::new().fg(theme.muted),
+            ),
             keycap(theme, "E"),
             Span::styled(format!(" {}", lang.end()), Style::new().fg(theme.muted)),
         ]),
     ];
 
     let panel = Paragraph::new(Text::from(lines))
-        .block(accent_block(theme, "PRESENTMON", theme.neon_magenta))
+        .block(accent_block(theme, lang.panel_rtss(), theme.neon_magenta))
         .wrap(Wrap { trim: true });
     frame.render_widget(panel, area);
+}
+
+fn overlay_config_label(app: &App, lang: Language) -> &'static str {
+    if app.config.overlay.enabled {
+        lang.enabled()
+    } else {
+        lang.disabled()
+    }
+}
+
+fn overlay_config_color(app: &App) -> Color {
+    if app.config.overlay.enabled {
+        app.theme.acid_green
+    } else {
+        app.theme.muted
+    }
+}
+
+fn overlay_status_color(app: &App) -> Color {
+    if !app.config.overlay.enabled {
+        app.theme.muted
+    } else if app.overlay_status.active {
+        app.theme.acid_green
+    } else {
+        app.theme.cyber_yellow
+    }
 }
 
 pub(super) fn render_system(frame: &mut Frame, app: &App, area: Rect) {
@@ -1819,7 +1868,7 @@ fn render_system_graphics_panel(frame: &mut Frame, app: &App, area: Rect) {
             ),
         ]),
         Line::from(vec![
-            metric_label(theme, lang.label_pmon()),
+            metric_label(theme, lang.label_rtss()),
             Span::styled(
                 crate::metrics::truncate(
                     &localized_frame_status(&app.frame_metrics.status, lang),
@@ -1985,6 +2034,10 @@ fn render_settings_config(frame: &mut Frame, app: &App, area: Rect) {
                 theme.orange,
             ),
         ]),
+        Line::from(vec![
+            metric_label(theme, lang.label_overlay()),
+            metric_value(overlay_config_label(app, lang), overlay_config_color(app)),
+        ]),
         Line::from(""),
         command_line(
             theme,
@@ -1997,6 +2050,12 @@ fn render_settings_config(frame: &mut Frame, app: &App, area: Rect) {
             "R",
             lang.command_probe_tools(),
             lang.command_probe_tools_detail(),
+        ),
+        command_line(
+            theme,
+            "S-F12/O",
+            lang.command_toggle_overlay(),
+            lang.command_toggle_overlay_detail(),
         ),
     ];
 
@@ -2085,7 +2144,7 @@ fn render_settings_runtime(frame: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(vec![
             Span::styled("  FPS       ", Style::new().fg(theme.cyber_yellow).bold()),
-            Span::styled(lang.roadmap_presentmon(), Style::new().fg(theme.muted)),
+            Span::styled(lang.roadmap_rtss(), Style::new().fg(theme.muted)),
         ]),
     ];
 
@@ -2098,20 +2157,15 @@ fn render_settings_runtime(frame: &mut Frame, app: &App, area: Rect) {
 fn render_settings_integrations(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
     let lang = app.config.ui.language;
-    let configured = app
-        .config
-        .integrations
-        .presentmon_exe
-        .as_ref()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| lang.not_set().to_string());
-    let resolved = app
-        .presentmon_probe
-        .path
-        .as_ref()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| lang.not_found().to_string());
-    let presentmon_color = if app.presentmon_probe.path.is_some() {
+    let install_hint = match lang {
+        Language::Spanish => "RTSS abierto + OSD enabled",
+        Language::English => "RTSS running + OSD enabled",
+    };
+    let packaging_hint = match lang {
+        Language::Spanish => "RTSS es requisito externo; el MSI no incluye backend de FPS",
+        Language::English => "RTSS is external; MSI does not bundle a frame backend",
+    };
+    let rtss_color = if app.frame_probe.available {
         theme.acid_green
     } else {
         theme.hot_red
@@ -2119,32 +2173,53 @@ fn render_settings_integrations(frame: &mut Frame, app: &App, area: Rect) {
 
     let lines = vec![
         Line::from(vec![
-            metric_label(theme, lang.label_pmon()),
+            metric_label(theme, lang.label_rtss()),
             metric_value(
-                localized_presentmon_status(&app.presentmon_probe.status, lang),
-                presentmon_color,
+                localized_frame_probe_status(&app.frame_probe.status, lang),
+                rtss_color,
             ),
         ]),
         Line::from(vec![
             metric_label(theme, lang.label_source()),
             metric_value(
-                localized_source_value(app.presentmon_probe.source, lang),
+                localized_source_value(app.frame_probe.source, lang),
                 theme.cyber_yellow,
             ),
         ]),
         Line::from(vec![
-            metric_label(theme, lang.label_config()),
+            metric_label(theme, lang.label_backend()),
+            metric_value("RivaTuner Statistics Server", theme.neon_cyan),
+        ]),
+        Line::from(vec![
+            metric_label(theme, "INSTALL"),
+            Span::styled(install_hint, Style::new().fg(theme.foreground)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            metric_label(theme, lang.label_overlay()),
+            metric_value(overlay_config_label(app, lang), overlay_config_color(app)),
+        ]),
+        Line::from(vec![
+            metric_label(theme, lang.label_backend()),
+            metric_value(app.overlay_status.backend.as_str(), theme.neon_cyan),
+        ]),
+        Line::from(vec![
+            metric_label(theme, lang.label_status()),
             Span::styled(
-                crate::metrics::truncate(&configured, 46),
-                Style::new().fg(theme.foreground),
+                crate::metrics::truncate(&app.overlay_status.message, 46),
+                Style::new().fg(overlay_status_color(app)),
             ),
         ]),
         Line::from(vec![
-            metric_label(theme, lang.label_resolved()),
-            Span::styled(
-                crate::metrics::truncate(&resolved, 46),
-                Style::new().fg(theme.foreground),
+            metric_label(theme, lang.label_telemetry()),
+            metric_value(
+                format!("{} ms", app.config.overlay.update_rate.as_millis()),
+                theme.cyber_yellow,
             ),
+        ]),
+        Line::from(vec![
+            metric_label(theme, "HOTKEY"),
+            metric_value("Shift+F12", theme.cyber_yellow),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -2161,13 +2236,9 @@ fn render_settings_integrations(frame: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  config.toml: ", Style::new().fg(theme.muted)),
-            Span::styled("[integrations]", Style::new().fg(theme.cyber_yellow).bold()),
+            metric_label(theme, "GIT"),
+            Span::styled(packaging_hint, Style::new().fg(theme.muted)),
         ]),
-        Line::from(vec![Span::styled(
-            r#"  presentmon_exe = "D:\Tools\PresentMon.exe""#,
-            Style::new().fg(theme.foreground),
-        )]),
     ];
 
     let panel = Paragraph::new(Text::from(lines))

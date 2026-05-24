@@ -5,7 +5,10 @@ telemetry_ms = 1000
 process_ms = 3000
 platform_ms = 15000
 
-[integrations]
+[overlay]
+enabled = true
+backend = "rtss"
+update_ms = 100
 
 [ui]
 language = "es"
@@ -14,7 +17,14 @@ language = "es"
 set_high_performance = true
 prioritize_steam = true
 kill_explorer = false
-protected_processes = ["steelseries"]
+protected_processes = [
+    "amd",
+    "radeon",
+    "rtss",
+    "rivatuner",
+    "msiafterburner",
+    "steelseries",
+]
 hidden_processes = [
     "smss",
     "csrss",
@@ -59,7 +69,11 @@ set_high_performance = true
 prioritize_steam = true
 kill_explorer = false
 protected_processes = [
-    "radeonsoftware",
+    "amd",
+    "radeon",
+    "rtss",
+    "rivatuner",
+    "msiafterburner",
     "steelseries",
 ]
 hidden_processes = [
@@ -137,8 +151,6 @@ processes = [
     "officeclicktorun",
     "onecommander",
     "files",
-    "amdryzenmaster",
-    "msiafterburner",
     "widgets",
     "widgetservice",
     "trafficmonitor",
@@ -158,7 +170,14 @@ processes = [
 set_high_performance = true
 prioritize_steam = true
 kill_explorer = true
-protected_processes = ["steelseries"]
+protected_processes = [
+    "amd",
+    "radeon",
+    "rtss",
+    "rivatuner",
+    "msiafterburner",
+    "steelseries",
+]
 hidden_processes = [
     "smss",
     "csrss",
@@ -234,9 +253,6 @@ processes = [
     "officeclicktorun",
     "onecommander",
     "files",
-    "radeonsoftware",
-    "amdryzenmaster",
-    "msiafterburner",
     "widgets",
     "widgetservice",
     "trafficmonitor",

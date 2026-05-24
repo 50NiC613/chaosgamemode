@@ -235,6 +235,10 @@ impl Language {
         }
     }
 
+    pub(crate) const fn overlay(self) -> &'static str {
+        "overlay"
+    }
+
     pub(crate) const fn nav(self) -> &'static str {
         "nav"
     }
@@ -1311,6 +1315,14 @@ impl Language {
         }
     }
 
+    pub(crate) const fn label_overlay(self) -> &'static str {
+        "OVERLAY"
+    }
+
+    pub(crate) const fn label_backend(self) -> &'static str {
+        "BACKEND"
+    }
+
     pub(crate) const fn label_resolved(self) -> &'static str {
         match self {
             Self::Spanish => "RESOLVED",
@@ -1406,8 +1418,8 @@ impl Language {
         }
     }
 
-    pub(crate) const fn label_pmon(self) -> &'static str {
-        "PMON"
+    pub(crate) const fn label_rtss(self) -> &'static str {
+        "RTSS"
     }
 
     pub(crate) const fn label_target(self) -> &'static str {
@@ -1491,8 +1503,8 @@ impl Language {
         }
     }
 
-    pub(crate) const fn panel_presentmon(self) -> &'static str {
-        "PRESENTMON"
+    pub(crate) const fn panel_rtss(self) -> &'static str {
+        "RTSS"
     }
 
     pub(crate) const fn dashboard_ready_status(self) -> &'static str {
@@ -1858,8 +1870,22 @@ impl Language {
 
     pub(crate) const fn command_probe_tools_detail(self) -> &'static str {
         match self {
-            Self::Spanish => "refresca deteccion de PresentMon",
-            Self::English => "refresh PresentMon detection",
+            Self::Spanish => "refresca deteccion de RTSS",
+            Self::English => "refresh RTSS detection",
+        }
+    }
+
+    pub(crate) const fn command_toggle_overlay(self) -> &'static str {
+        match self {
+            Self::Spanish => "Overlay fullscreen",
+            Self::English => "Fullscreen Overlay",
+        }
+    }
+
+    pub(crate) const fn command_toggle_overlay_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "RTSS OSD encima del juego",
+            Self::English => "RTSS OSD over the game",
         }
     }
 
@@ -2028,6 +2054,20 @@ impl Language {
         match self {
             Self::Spanish => "detenido",
             Self::English => "stopped",
+        }
+    }
+
+    pub(crate) const fn enabled(self) -> &'static str {
+        match self {
+            Self::Spanish => "activo",
+            Self::English => "enabled",
+        }
+    }
+
+    pub(crate) const fn disabled(self) -> &'static str {
+        match self {
+            Self::Spanish => "apagado",
+            Self::English => "disabled",
         }
     }
 
@@ -2238,10 +2278,10 @@ impl Language {
         }
     }
 
-    pub(crate) const fn roadmap_presentmon(self) -> &'static str {
+    pub(crate) const fn roadmap_rtss(self) -> &'static str {
         match self {
-            Self::Spanish => "PresentMon Console via winget",
-            Self::English => "PresentMon Console via winget",
+            Self::Spanish => "RTSS OSD + shared memory",
+            Self::English => "RTSS OSD + shared memory",
         }
     }
 

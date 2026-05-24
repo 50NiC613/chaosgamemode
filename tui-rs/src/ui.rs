@@ -290,6 +290,11 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             spans.extend([
                 keycap(theme, "R"),
                 Span::styled(format!(" {} ", lang.probe()), Style::new().fg(theme.muted)),
+                keycap(theme, "S-F12"),
+                Span::styled(
+                    format!(" {} ", lang.overlay()),
+                    Style::new().fg(theme.muted),
+                ),
                 keycap(theme, "M"),
                 Span::styled(format!(" {} ", lang.theme()), Style::new().fg(theme.muted)),
             ]);
@@ -298,6 +303,11 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             spans.extend([
                 keycap(theme, "R"),
                 Span::styled(format!(" {} ", lang.probe()), Style::new().fg(theme.muted)),
+                keycap(theme, "S-F12"),
+                Span::styled(
+                    format!(" {} ", lang.overlay()),
+                    Style::new().fg(theme.muted),
+                ),
                 keycap(theme, "E"),
                 Span::styled(format!(" {} ", lang.end()), Style::new().fg(theme.muted)),
             ]);

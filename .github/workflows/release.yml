@@ -118,8 +118,8 @@ jobs:
 
           ### Notes
           - Steam is the current supported game platform.
-          - The MSI bundles PresentMon Console for FPS, frametime, and 1% low metrics.
-          - The standalone exe can use PresentMon from config, environment, WinGet, or PATH.
+          - FPS, frametime, 1% low, and fullscreen OSD use RivaTuner Statistics Server (RTSS).
+          - Install RTSS separately and keep its On-Screen Display enabled while playing.
           - UI language is configured in ``config.toml`` under ``[ui] language = "es"`` or ``"en"``.
           "@
           $notes | Set-Content -Path dist\release-notes.md -Encoding UTF8

@@ -8,10 +8,7 @@ param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "Programs\ChaosGameMode"),
 
     [Parameter(Mandatory = $false)]
-    [switch]$NoPath,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$SkipPresentMon
+    [switch]$NoPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -144,64 +141,6 @@ function Write-CommandShim {
     Set-Content -Path $Path -Value $contents -Encoding ASCII
 }
 
-function Get-PresentMonConsolePath {
-    foreach ($commandName in @("presentmon", "presentmon.exe", "PresentMon.exe")) {
-        $command = Get-Command $commandName -ErrorAction SilentlyContinue
-        if ($command -and $command.Source -and (Test-Path $command.Source)) {
-            return $command.Source
-        }
-    }
-
-    $wingetPackageDir = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages\Intel.PresentMon.Console_Microsoft.Winget.Source_8wekyb3d8bbwe"
-    $direct = Join-Path $wingetPackageDir "presentmon.exe"
-    if (Test-Path $direct) {
-        return $direct
-    }
-
-    if (Test-Path $wingetPackageDir) {
-        $found = Get-ChildItem -Path $wingetPackageDir -Filter "presentmon.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found) {
-            return $found.FullName
-        }
-    }
-
-    return $null
-}
-
-function Install-PresentMonConsole {
-    if ($SkipPresentMon) {
-        Write-Step "PresentMon omitido por -SkipPresentMon"
-        return
-    }
-
-    $presentMonPath = Get-PresentMonConsolePath
-    if ($presentMonPath) {
-        Write-Step "PresentMon Console detectado: $presentMonPath"
-        return
-    }
-
-    $winget = Get-Command winget -ErrorAction SilentlyContinue
-    if (-not $winget) {
-        Write-Warning "winget no esta disponible; FPS/frametime quedara desactivado hasta instalar Intel.PresentMon.Console."
-        return
-    }
-
-    Write-Step "Instalando dependencia: Intel.PresentMon.Console"
-    try {
-        & winget install --id Intel.PresentMon.Console --exact --accept-package-agreements --accept-source-agreements
-    } catch {
-        Write-Warning "No se pudo instalar Intel.PresentMon.Console automaticamente: $_"
-        return
-    }
-
-    $presentMonPath = Get-PresentMonConsolePath
-    if ($presentMonPath) {
-        Write-Step "PresentMon Console instalado: $presentMonPath"
-    } else {
-        Write-Warning "PresentMon fue instalado por winget, pero la terminal actual podria necesitar reiniciarse para exponer el comando presentmon."
-    }
-}
-
 if ($Action -eq "Uninstall") {
     if (-not $NoPath) {
         Remove-FromUserPath $InstallDir
@@ -222,8 +161,6 @@ if (-not (Test-Path $CargoProject)) {
 }
 
 Get-Command cargo -ErrorAction Stop | Out-Null
-
-Install-PresentMonConsole
 
 Write-Step "Compilando TUI Rust en modo release"
 Push-Location $CargoProject
@@ -272,5 +209,6 @@ Write-Host "Chaos Game Mode quedo instalado." -ForegroundColor Green
 Write-Host "Ejecutar:      chaosgamemode"
 Write-Host "Actualizar:   chaosgamemode-update"
 Write-Host "Desinstalar:  chaosgamemode-uninstall"
+Write-Host "FPS/Overlay:  instala y deja abierto RivaTuner Statistics Server (RTSS)"
 Write-Host ""
 Write-Host "Si la terminal actual no reconoce el comando, abre una terminal nueva."

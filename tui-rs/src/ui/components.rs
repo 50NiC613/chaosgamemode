@@ -222,92 +222,82 @@ pub(super) fn localized_hardware_status(status: &str, language: Language) -> Str
 }
 
 pub(super) fn localized_frame_status(status: &str, language: Language) -> String {
-    if status == "PresentMon waiting for Steam game" {
+    if status == "RTSS waiting for Steam game" {
         return match language {
-            Language::Spanish => "PresentMon esperando Steam game".to_string(),
+            Language::Spanish => "RTSS esperando juego de Steam".to_string(),
             Language::English => status.to_string(),
         };
     }
-    if let Some(process) = status.strip_prefix("PresentMon starting ") {
+    if let Some(process) = status.strip_prefix("RTSS starting ") {
         return match language {
-            Language::Spanish => format!("PresentMon starting {process}"),
+            Language::Spanish => format!("RTSS iniciando captura: {process}"),
             Language::English => status.to_string(),
         };
     }
-    if let Some(game) = status.strip_prefix("PresentMon resolving ") {
+    if let Some(game) = status.strip_prefix("RTSS resolving ") {
         return match language {
-            Language::Spanish => format!("PresentMon detectando proceso: {game}"),
-            Language::English => format!("PresentMon resolving process: {game}"),
+            Language::Spanish => format!("RTSS detectando proceso: {game}"),
+            Language::English => format!("RTSS resolving process: {game}"),
         };
     }
-    if let Some(process) = status.strip_prefix("PresentMon probing ") {
+    if let Some(process) = status.strip_prefix("RTSS probing ") {
         return match language {
-            Language::Spanish => format!("PresentMon probando {process}"),
-            Language::English => format!("PresentMon probing {process}"),
+            Language::Spanish => format!("RTSS probando {process}"),
+            Language::English => format!("RTSS probing {process}"),
         };
     }
-    if let Some(process) = status.strip_prefix("PresentMon tracking ") {
+    if let Some(process) = status.strip_prefix("RTSS tracking ") {
         return match language {
-            Language::Spanish => format!("PresentMon tracking {process}"),
+            Language::Spanish => format!("RTSS capturando {process}"),
             Language::English => status.to_string(),
         };
     }
-    if status == "PresentMon no encontrado; configura integrations.presentmon_exe" {
+    if let Some(process) = status.strip_prefix("RTSS waiting fresh frames for ") {
         return match language {
-            Language::Spanish => status.to_string(),
-            Language::English => {
-                "PresentMon not found; configure integrations.presentmon_exe".to_string()
-            }
+            Language::Spanish => format!("RTSS esperando frames nuevos de {process}"),
+            Language::English => status.to_string(),
         };
     }
-    if let Some(path) = status.strip_prefix("PresentMon path invalido: ") {
+    if let Some(process) = status.strip_prefix("RTSS waiting for ") {
         return match language {
-            Language::Spanish => status.to_string(),
-            Language::English => format!("Invalid PresentMon path: {path}"),
+            Language::Spanish => format!("RTSS esperando {process}"),
+            Language::English => status.to_string(),
         };
     }
-    if status == "PresentMon no entrego stdout" {
+    if status == "RTSS waiting for hooked game frames" {
         return match language {
-            Language::Spanish => status.to_string(),
-            Language::English => "PresentMon did not provide stdout".to_string(),
+            Language::Spanish => "RTSS esperando frames del juego".to_string(),
+            Language::English => status.to_string(),
+        };
+    }
+    if status == "RTSS did not expose an active game target" {
+        return match language {
+            Language::Spanish => "RTSS no expuso un proceso de juego activo".to_string(),
+            Language::English => status.to_string(),
         };
     }
     status.to_string()
 }
 
-pub(super) fn localized_presentmon_status(status: &str, language: Language) -> String {
+pub(super) fn localized_frame_probe_status(status: &str, language: Language) -> String {
     match status {
-        "PresentMon listo desde config" => match language {
-            Language::Spanish => status.to_string(),
-            Language::English => "PresentMon ready from config".to_string(),
+        "RTSS listo" => match language {
+            Language::Spanish => "RTSS listo".to_string(),
+            Language::English => "RTSS ready".to_string(),
         },
-        "PresentMon configurado pero no existe" => match language {
-            Language::Spanish => status.to_string(),
-            Language::English => "PresentMon configured but missing".to_string(),
+        "RTSS not running; start RivaTuner Statistics Server" => match language {
+            Language::Spanish => {
+                "RTSS no esta abierto; inicia RivaTuner Statistics Server".to_string()
+            }
+            Language::English => status.to_string(),
         },
-        "PresentMon listo desde env" => match language {
-            Language::Spanish => status.to_string(),
-            Language::English => "PresentMon ready from env".to_string(),
+        "RTSS shared memory is not initialized" => match language {
+            Language::Spanish => "RTSS shared memory no esta inicializada".to_string(),
+            Language::English => status.to_string(),
         },
-        "PresentMon listo incluido" => match language {
-            Language::Spanish => status.to_string(),
-            Language::English => "PresentMon ready from bundled exe".to_string(),
-        },
-        "PRESENTMON_EXE apunta a una ruta invalida" => match language {
-            Language::Spanish => status.to_string(),
-            Language::English => "PRESENTMON_EXE points to an invalid path".to_string(),
-        },
-        "PresentMon listo desde winget" => match language {
-            Language::Spanish => status.to_string(),
-            Language::English => "PresentMon ready from winget".to_string(),
-        },
-        "PresentMon listo desde PATH" => match language {
-            Language::Spanish => status.to_string(),
-            Language::English => "PresentMon ready from PATH".to_string(),
-        },
-        "PresentMon no encontrado" => match language {
-            Language::Spanish => status.to_string(),
-            Language::English => "PresentMon not found".to_string(),
+        "RTSS frame capture is only available on Windows" => match language {
+            Language::Spanish => "captura RTSS solo disponible en Windows".to_string(),
+            Language::English => status.to_string(),
         },
         _ => status.to_string(),
     }
@@ -404,6 +394,8 @@ pub(super) fn localized_source_value(source: &'static str, language: Language) -
         (Language::English, "none") => "none",
         (Language::Spanish, "bundled") => "incluido",
         (Language::English, "bundled") => "bundled",
+        (Language::Spanish, "rtss") => "RTSS shared memory",
+        (Language::English, "rtss") => "RTSS shared memory",
         _ => source,
     }
 }

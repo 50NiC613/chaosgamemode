@@ -22,12 +22,13 @@ Chaos Game Mode is a terminal dashboard and optimizer for Windows gaming session
 - Shows live CPU, RAM, GPU, VRAM, temperature, FPS, 1% low, frametime, and removable background memory where data is available.
 - Detects Steam libraries, lists installed games, launches games normally or with an Overdrive preview flow.
 - Tracks active Steam sessions and shows elapsed game time.
-- Opens a dedicated `Frames` tab for MangoHUD-style FPS, frametime, PresentMon status, GPU/CPU traces, and active game context.
+- Opens a dedicated `Frames` tab for MangoHUD-style FPS, frametime, RTSS status, GPU/CPU traces, and active game context.
+- Can publish a lightweight fullscreen OSD through RivaTuner Statistics Server (RTSS), so FPS/session metrics can appear over exclusive fullscreen games.
 - Marks processes as `TARGET`, `KEEP`, `WATCH`, or `HIDDEN` so you can tune what the optimizer should touch.
 - Protects important apps by default, including SteelSeries tools.
 - Applies reversible Overdrive actions: high-performance power plan, service cleanup, Steam priority, process cleanup, and optional Explorer handling by profile.
 - Restores the system after a session by restarting shell/services and returning the power profile.
-- Persists process policy, telemetry intervals, integrations, and UI language in `config.toml`.
+- Persists process policy, telemetry intervals, overlay settings, and UI language in `config.toml`.
 - Supports live theme switching through `theme.toml`.
 
 ### Steam Support
@@ -47,23 +48,37 @@ The app does not ask for your Steam password and does not need Steam login token
 
 ### FPS And Frame Data
 
-FPS metrics use Intel PresentMon Console. The MSI bundles `presentmon.exe` beside `chaosgamemode.exe`, so normal installs do not need a separate WinGet step. For portable/dev runs, you can still install it manually:
+FPS, frametime, average FPS, and 1% low are read from RivaTuner Statistics Server (RTSS) shared memory. Chaos Game Mode does not bundle or launch a separate FPS capture executable.
 
-```powershell
-winget install Intel.PresentMon.Console
-```
+Install RTSS separately and keep it running while you play. The usual path is installing RivaTuner Statistics Server directly or through MSI Afterburner, then enabling the RTSS On-Screen Display for the game.
 
-Chaos Game Mode will look for PresentMon in this order:
+If RTSS is missing or closed, the app still runs. CPU/RAM/GPU/session data stays available, while FPS, frametime, and 1% low remain unavailable until RTSS exposes hooked game frames.
 
-1. `presentmon_exe` in `config.toml`
-2. `PRESENTMON_EXE` environment variable
-3. bundled `presentmon.exe` next to `chaosgamemode.exe`
-4. the default WinGet installation path
-5. `PATH`
-
-If PresentMon is missing, the app still runs. FPS, frametime, and 1% low will show as unavailable until the tool is detected.
+Chaos Game Mode automatically waits for Steam launchers and helper windows, then locks onto the active RTSS game process once real frame samples appear.
 
 When a Steam game is launched or auto-detected, the TUI can move into the `Frames` tab so the second monitor becomes a focused performance view instead of crowding the main dashboard.
+
+### Fullscreen Overlay
+
+Exclusive fullscreen overlays need a low-level OSD host. Chaos Game Mode uses an RTSS shared-memory backend for this instead of a normal transparent desktop window.
+
+Requirements for the overlay:
+
+- RivaTuner Statistics Server running.
+- RTSS On-Screen Display enabled for the game.
+- A hooked game process visible in RTSS shared memory.
+
+Controls and config:
+
+- Press `Shift+F12` to toggle the overlay while Chaos Game Mode is running, even when the game is focused. `O` also works from the `Frames` or `Settings` tab.
+- The overlay only renders while a Steam session is active; when no game is detected it stays armed and keeps the OSD clean.
+
+```toml
+[overlay]
+enabled = true
+backend = "rtss"
+update_ms = 100
+```
 
 ### Installation
 
@@ -72,7 +87,8 @@ Requirements:
 - Windows 10 or Windows 11
 - PowerShell 7 recommended
 - Rust stable with the MSVC toolchain
-- Internet access when building the MSI, so `build-msi.ps1` can download the bundled PresentMon binary
+- RivaTuner Statistics Server for FPS metrics and fullscreen OSD
+- Internet access only if `build-msi.ps1 -InstallWix` needs to install WiX locally
 
 Install or update from the repository:
 
@@ -163,8 +179,10 @@ telemetry_ms = 1000
 process_ms = 3000
 platform_ms = 15000
 
-[integrations]
-# presentmon_exe = "D:\\Tools\\PresentMon.exe"
+[overlay]
+enabled = true
+backend = "rtss"
+update_ms = 100
 ```
 
 Profiles:
@@ -193,7 +211,7 @@ Supported values:
 - `es`: Spanish
 - `en`: English
 
-Navigation, header, footer, dialogs, theme menu, and settings chrome are language-aware. Some deep telemetry/status strings still come from Windows, Steam, PresentMon, or the internal action log and may remain mixed while the app evolves.
+Navigation, header, footer, dialogs, theme menu, and settings chrome are language-aware. Some deep telemetry/status strings still come from Windows, Steam, RTSS, or the internal action log and may remain mixed while the app evolves.
 
 ### Themes
 
@@ -223,6 +241,7 @@ Chaos Game Mode is intentionally local and reversible:
 - Overdrive requires a preview/confirmation step.
 - Steam uninstall is delegated to Steam through `steam://uninstall/<appid>`.
 - Protected processes are excluded from cleanup.
+- GPU/OSD/control tools such as AMD/Radeon, RTSS, RivaTuner, MSI Afterburner, and SteelSeries are protected internally even if an older config accidentally lists them as cleanup targets.
 - Windows system processes and Defender-related entries are hidden from normal process targeting.
 - Restore brings back shell/services and balanced power behavior.
 
@@ -248,12 +267,13 @@ Chaos Game Mode es un dashboard y optimizador en terminal para sesiones de gamin
 - Muestra CPU, RAM, GPU, VRAM, temperaturas, FPS, 1% low, frametime y memoria recuperable cuando esos datos estan disponibles.
 - Detecta bibliotecas de Steam, lista juegos instalados y permite lanzarlos normal o con Overdrive.
 - Lleva un contador de sesion cuando un juego de Steam esta activo.
-- Abre una tab dedicada `Frames`, estilo MangoHUD, con FPS, frametime, estado de PresentMon, trazas GPU/CPU y contexto del juego activo.
+- Abre una tab dedicada `Frames`, estilo MangoHUD, con FPS, frametime, estado de RTSS, trazas GPU/CPU y contexto del juego activo.
+- Puede publicar un OSD ligero via RivaTuner Statistics Server (RTSS), para ver metricas encima de juegos en fullscreen exclusivo.
 - Clasifica procesos como `TARGET`, `KEEP`, `WATCH` u `HIDDEN` para decidir que se puede cerrar y que debe respetarse.
 - Protege apps importantes por defecto, incluyendo herramientas de SteelSeries.
 - Aplica acciones reversibles: plan de energia de alto rendimiento, limpieza de servicios, prioridad a Steam, limpieza de procesos y manejo opcional de Explorer segun perfil.
 - Restaura el sistema despues de jugar.
-- Guarda politica de procesos, intervalos de telemetria, integraciones e idioma en `config.toml`.
+- Guarda politica de procesos, intervalos de telemetria, overlay e idioma en `config.toml`.
 - Permite cambiar temas desde `theme.toml`.
 
 ### Soporte De Steam
@@ -271,6 +291,16 @@ Funciones actuales:
 
 La app no pide tu contraseña de Steam ni usa tokens de login. Trabaja con metadatos locales y comandos URI de Steam.
 
+### FPS Y Frames
+
+Los FPS, frametime, FPS promedio y 1% low se leen desde la memoria compartida de RivaTuner Statistics Server (RTSS). Chaos Game Mode no incluye ni ejecuta un capturador externo de FPS dentro del MSI.
+
+Instala RTSS por separado y dejalo abierto mientras juegas. Lo normal es instalar RivaTuner Statistics Server directamente o mediante MSI Afterburner, y activar el On-Screen Display de RTSS para el juego.
+
+Si RTSS no esta instalado o esta cerrado, la app sigue funcionando. CPU/RAM/GPU/sesion siguen disponibles; FPS, frametime y 1% low quedan como no disponibles hasta que RTSS exponga frames reales del juego.
+
+Chaos Game Mode espera automaticamente launchers y ventanas auxiliares de Steam, y se queda con el proceso activo cuando RTSS empieza a entregar samples de frames reales.
+
 ### Instalacion
 
 Requisitos:
@@ -278,7 +308,8 @@ Requisitos:
 - Windows 10 o Windows 11
 - PowerShell 7 recomendado
 - Rust estable con toolchain MSVC
-- Acceso a internet al construir el MSI, para que `build-msi.ps1` descargue el binario incluido de PresentMon
+- RivaTuner Statistics Server para metricas FPS y OSD en fullscreen
+- Acceso a internet solo si `build-msi.ps1 -InstallWix` necesita instalar WiX localmente
 
 Instalar o actualizar desde el repo:
 
@@ -325,7 +356,7 @@ Valores soportados:
 - `es`: español
 - `en`: ingles
 
-La navegacion, header, footer, modales, menu de temas y chrome de ajustes ya usan este ajuste. Algunos textos profundos de telemetria, Steam, PresentMon o logs internos pueden seguir mixtos mientras se termina la cobertura completa.
+La navegacion, header, footer, modales, menu de temas y chrome de ajustes ya usan este ajuste. Algunos textos profundos de telemetria, Steam, RTSS o logs internos pueden seguir mixtos mientras se termina la cobertura completa.
 
 ### Configuracion
 
@@ -339,7 +370,7 @@ Secciones clave:
 
 - `[ui]`: idioma de la interfaz.
 - `[telemetry]`: frecuencia de CPU/RAM/procesos/plataforma.
-- `[integrations]`: ruta opcional a PresentMon.
+- `[overlay]`: backend RTSS, activacion del OSD y frecuencia de actualizacion.
 - `[profiles.safe]`, `[profiles.balanced]`, `[profiles.aggressive]`: perfiles de optimizacion.
 
 Politica de procesos:
@@ -348,24 +379,27 @@ Politica de procesos:
 - `protected_processes`: procesos protegidos que no se cierran.
 - `hidden_processes`: procesos que no deben ensuciar la lista principal.
 
-### PresentMon
+### Overlay Fullscreen
 
-Para FPS, frametime y 1% low se usa Intel PresentMon Console. El MSI incluye `presentmon.exe` junto a `chaosgamemode.exe`, asi que una instalacion normal no necesita un paso extra con WinGet. Para uso portable/dev, puedes instalarlo manualmente con:
+Los overlays encima de fullscreen exclusivo necesitan un host OSD de bajo nivel. Chaos Game Mode usa RTSS por memoria compartida para evitar una ventana transparente normal, que no es confiable en fullscreen exclusivo.
 
-```powershell
-winget install Intel.PresentMon.Console
-```
+Requisitos:
 
-Tambien puedes fijar la ruta manualmente:
+- RivaTuner Statistics Server abierto.
+- OSD de RTSS activado para el juego.
+- Un proceso de juego hookeado y visible en RTSS shared memory.
+
+Uso:
+
+- Pulsa `Shift+F12` para activar/desactivar el overlay mientras Chaos Game Mode esta abierto, incluso con el juego enfocado. `O` tambien funciona desde `Frames` o `Ajustes`.
+- El overlay solo se dibuja cuando hay una sesion de Steam activa; sin juego abierto queda armado y no ensucia la pantalla.
 
 ```toml
-[integrations]
-presentmon_exe = "D:\\Tools\\PresentMon.exe"
+[overlay]
+enabled = true
+backend = "rtss"
+update_ms = 100
 ```
-
-Si PresentMon no esta disponible, la TUI sigue funcionando; solo los datos de frames quedan en estado no disponible.
-
-Cuando se lanza o detecta un juego de Steam, la TUI puede enfocarse en la tab `Frames` para que el segundo monitor sea una vista de rendimiento limpia y no sobrecargue el dashboard.
 
 ### Roadmap
 
@@ -414,9 +448,10 @@ tui-rs\src\ui.rs            main frame, header, tabs, footer, modals
 tui-rs\src\ui\dashboard.rs  telemetry dashboard
 tui-rs\src\ui\steam_panel.rs Steam library and session panels
 tui-rs\src\ui\pages.rs      frames, processes, overdrive, system, history, settings
-tui-rs\src\config.rs        profiles, process policy, integrations, UI config
+tui-rs\src\config.rs        profiles, process policy, overlay, UI config
 tui-rs\src\steam.rs         Steam library discovery and URI commands
-tui-rs\src\presentmon.rs    PresentMon probing and frame capture
+tui-rs\src\frames.rs        RTSS frame probing and FPS capture
+tui-rs\src\overlay.rs       RTSS fullscreen overlay backend
 tui-rs\src\system.rs        Windows state and Overdrive/Restore actions
 tui-rs\src\theme.rs         theme presets and live theme file
 tui-rs\src\i18n.rs          UI language strings
@@ -460,7 +495,7 @@ Local MSI builds are still supported:
 .\build-msi.ps1 -InstallWix
 ```
 
-The MSI build copies `presentmon.exe` into the installer payload. If PresentMon is not already installed locally, the build script downloads the configured PresentMon release into `.tools\presentmon`.
+The MSI build packages Chaos Game Mode, default config/theme files, and the README. RTSS is intentionally documented as an external requirement instead of being bundled inside the installer.
 
 Suggested manual release notes structure:
 
@@ -479,7 +514,7 @@ Run the MSI or use .\install.ps1 from the repository.
 
 ## Requirements
 - Windows 10/11
-- Optional: Intel PresentMon Console for FPS metrics
+- RivaTuner Statistics Server for FPS metrics and fullscreen OSD
 ```
 
 ## License

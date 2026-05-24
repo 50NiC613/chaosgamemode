@@ -5,6 +5,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::i18n::Language;
+use crate::overlay::{OverlayBackend, OverlayConfig};
 
 #[derive(Clone)]
 pub(crate) struct AppConfig {
@@ -14,7 +15,7 @@ pub(crate) struct AppConfig {
     balanced: BoostProfile,
     aggressive: BoostProfile,
     pub(crate) telemetry: TelemetryConfig,
-    pub(crate) integrations: IntegrationConfig,
+    pub(crate) overlay: OverlayConfig,
     pub(crate) ui: UiConfig,
     pub(crate) status: String,
 }
@@ -46,11 +47,6 @@ pub(crate) struct TelemetryConfig {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct IntegrationConfig {
-    pub(crate) presentmon_exe: Option<PathBuf>,
-}
-
-#[derive(Clone, Default)]
 pub(crate) struct UiConfig {
     pub(crate) language: Language,
 }
@@ -59,7 +55,7 @@ pub(crate) struct UiConfig {
 struct ConfigFile {
     active_profile: Option<String>,
     telemetry: Option<TelemetryFile>,
-    integrations: Option<IntegrationFile>,
+    overlay: Option<OverlayFile>,
     ui: Option<UiFile>,
     profiles: Option<ProfilesFile>,
 }
@@ -72,8 +68,10 @@ struct TelemetryFile {
 }
 
 #[derive(Default, Deserialize)]
-struct IntegrationFile {
-    presentmon_exe: Option<PathBuf>,
+struct OverlayFile {
+    enabled: Option<bool>,
+    backend: Option<String>,
+    update_ms: Option<u64>,
 }
 
 #[derive(Default, Deserialize)]
@@ -229,6 +227,16 @@ impl AppConfig {
         }
     }
 
+    pub(crate) fn toggle_overlay_enabled(&mut self) {
+        self.overlay.enabled = !self.overlay.enabled;
+        let state = if self.overlay.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        self.persist(format!("overlay: {state}"));
+    }
+
     fn from_file(file: ConfigFile, path: PathBuf) -> Self {
         let mut config = Self {
             path: Some(path.clone()),
@@ -240,8 +248,8 @@ impl AppConfig {
         if let Some(telemetry) = file.telemetry {
             config.telemetry = config.telemetry.with_override(telemetry);
         }
-        if let Some(integrations) = file.integrations {
-            config.integrations = IntegrationConfig::from_file(integrations);
+        if let Some(overlay) = file.overlay {
+            config.overlay = config.overlay.with_override(overlay);
         }
         if let Some(ui) = file.ui {
             config.ui = config.ui.with_override(ui);
@@ -301,8 +309,10 @@ impl AppConfig {
                 process_ms: self.telemetry.process_rate.as_millis() as u64,
                 platform_ms: self.telemetry.platform_rate.as_millis() as u64,
             },
-            integrations: IntegrationFileOut {
-                presentmon_exe: self.integrations.presentmon_exe.clone(),
+            overlay: OverlayFileOut {
+                enabled: self.overlay.enabled,
+                backend: self.overlay.backend.as_str().to_string(),
+                update_ms: self.overlay.update_rate.as_millis() as u64,
             },
             ui: UiFileOut {
                 language: self.ui.language.code().to_string(),
@@ -325,7 +335,7 @@ impl Default for AppConfig {
             balanced: BoostProfile::balanced(),
             aggressive: BoostProfile::aggressive(),
             telemetry: TelemetryConfig::default(),
-            integrations: IntegrationConfig::default(),
+            overlay: OverlayConfig::default(),
             ui: UiConfig::default(),
             status: "config defaults".to_string(),
         }
@@ -354,6 +364,9 @@ impl ProfileName {
 impl BoostProfile {
     pub(crate) fn is_protected_process(&self, process_name: &str) -> bool {
         let process_name = process_name.to_ascii_lowercase();
+        if is_builtin_protected_process(&process_name) {
+            return true;
+        }
         self.protected_processes
             .iter()
             .any(|pattern| process_name.contains(&pattern.to_ascii_lowercase()))
@@ -526,7 +539,7 @@ impl BoostProfile {
 struct ConfigFileOut {
     active_profile: String,
     telemetry: TelemetryFileOut,
-    integrations: IntegrationFileOut,
+    overlay: OverlayFileOut,
     ui: UiFileOut,
     profiles: ProfilesFileOut,
 }
@@ -539,8 +552,10 @@ struct TelemetryFileOut {
 }
 
 #[derive(Serialize)]
-struct IntegrationFileOut {
-    presentmon_exe: Option<PathBuf>,
+struct OverlayFileOut {
+    enabled: bool,
+    backend: String,
+    update_ms: u64,
 }
 
 #[derive(Serialize)]
@@ -605,13 +620,22 @@ impl TelemetryConfig {
     }
 }
 
-impl IntegrationConfig {
-    fn from_file(file: IntegrationFile) -> Self {
-        Self {
-            presentmon_exe: file
-                .presentmon_exe
-                .filter(|path| !path.as_os_str().is_empty()),
+impl OverlayConfig {
+    fn with_override(mut self, override_file: OverlayFile) -> Self {
+        if let Some(enabled) = override_file.enabled {
+            self.enabled = enabled;
         }
+        if let Some(backend) = override_file
+            .backend
+            .as_deref()
+            .and_then(OverlayBackend::parse)
+        {
+            self.backend = backend;
+        }
+        if let Some(ms) = override_file.update_ms {
+            self.update_rate = Duration::from_millis(ms.clamp(100, 2_000));
+        }
+        self
     }
 }
 
@@ -662,6 +686,20 @@ fn is_builtin_hidden_process(process_key: &str) -> bool {
     ) || process_key.ends_with("host")
 }
 
+fn is_builtin_protected_process(process_name: &str) -> bool {
+    let process_key = process_pattern_from_name(process_name);
+    [
+        "amd",
+        "radeon",
+        "rtss",
+        "rivatuner",
+        "msiafterburner",
+        "steelseries",
+    ]
+    .iter()
+    .any(|pattern| process_key.contains(pattern))
+}
+
 fn default_services() -> Vec<String> {
     strings(&[
         "SysMain",
@@ -677,7 +715,14 @@ fn default_services() -> Vec<String> {
 }
 
 fn default_protected_processes() -> Vec<String> {
-    strings(&["steelseries"])
+    strings(&[
+        "amd",
+        "radeon",
+        "rtss",
+        "rivatuner",
+        "msiafterburner",
+        "steelseries",
+    ])
 }
 
 fn default_hidden_processes() -> Vec<String> {
@@ -748,9 +793,6 @@ fn default_processes() -> Vec<String> {
         "officeclicktorun",
         "onecommander",
         "files",
-        "radeonsoftware",
-        "amdryzenmaster",
-        "msiafterburner",
         "widgets",
         "widgetservice",
         "trafficmonitor",
@@ -793,19 +835,22 @@ mod tests {
     }
 
     #[test]
-    fn integration_config_should_load_presentmon_path() {
-        let path = PathBuf::from(r"D:\Tools\PresentMon.exe");
+    fn overlay_config_should_load_rtss_settings() {
         let config = AppConfig::from_file(
             ConfigFile {
-                integrations: Some(IntegrationFile {
-                    presentmon_exe: Some(path.clone()),
+                overlay: Some(OverlayFile {
+                    enabled: Some(false),
+                    backend: Some("rtss".to_string()),
+                    update_ms: Some(75),
                 }),
                 ..ConfigFile::default()
             },
             PathBuf::from("config.toml"),
         );
 
-        assert_eq!(config.integrations.presentmon_exe, Some(path));
+        assert!(!config.overlay.enabled);
+        assert_eq!(config.overlay.backend, OverlayBackend::Rtss);
+        assert_eq!(config.overlay.update_rate, Duration::from_millis(100));
     }
 
     #[test]
@@ -851,6 +896,18 @@ mod tests {
         let profile = BoostProfile::balanced();
 
         assert!(profile.is_hidden_process("MsMpEng.exe"));
+    }
+
+    #[test]
+    fn gpu_overlay_tools_should_be_protected_even_when_config_targets_them() {
+        let mut profile = BoostProfile::balanced();
+        profile.processes.push("radeonsoftware".to_string());
+        profile.processes.push("msiafterburner".to_string());
+
+        assert!(profile.is_protected_process("RadeonSoftware.exe"));
+        assert!(profile.is_protected_process("MSIAfterburner.exe"));
+        assert!(!profile.is_target_process("RadeonSoftware.exe"));
+        assert!(!profile.is_target_process("MSIAfterburner.exe"));
     }
 
     #[test]

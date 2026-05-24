@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 use crossterm::ExecutableCommand;
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
-    MouseEvent, MouseEventKind,
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -17,16 +17,18 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use sysinfo::System;
 
 use crate::config::{AppConfig, BoostProfile, TelemetryConfig};
+use crate::frames::{
+    FrameMetrics, FrameProbe, probe_frame_backend, spawn_frame_capture, spawn_frame_discovery,
+};
 use crate::game_resolver::{GameProcessResolver, discovery_exclusions, is_rejected_process};
 use crate::history;
+use crate::hotkeys::{HotkeyEvent, spawn_hotkey_thread};
 use crate::i18n::Language;
 use crate::metrics::{
     format_duration, percent_from_f32, push_history, sorted_filtered_hidden_processes,
     sorted_filtered_observed_processes, truncate,
 };
-use crate::presentmon::{
-    FrameMetrics, PresentMonProbe, probe_presentmon, spawn_frame_capture, spawn_frame_discovery,
-};
+use crate::overlay::{OverlaySnapshot, OverlayStatus, spawn_overlay_thread};
 use crate::steam::{
     CompletedSession, SessionState, SteamGame, SteamLibrary, SteamScanResult, install_steam_game,
     launch_steam_game, open_steam_downloads, open_steam_game_properties, spawn_steam_scan,
@@ -40,6 +42,7 @@ use crate::theme::{Theme, ThemePreset, ThemeWatcher};
 use crate::ui::{render_confirm, render_monitor, render_output, render_theme_menu};
 
 const HISTORY_VIEW_LIMIT: usize = 240;
+const FRAME_PROBE_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Screen {
@@ -180,6 +183,11 @@ pub(crate) struct App {
     pub(crate) theme_preset: ThemePreset,
     pub(crate) theme_status: String,
     telemetry_rx: Receiver<SystemState>,
+    hotkey_rx: Receiver<HotkeyEvent>,
+    overlay_tx: Sender<OverlaySnapshot>,
+    overlay_status_rx: Receiver<OverlayStatus>,
+    pub(crate) overlay_status: OverlayStatus,
+    last_overlay_sync: Instant,
     frame_rx: Option<Receiver<FrameMetrics>>,
     frame_target: Option<String>,
     frame_target_started_at: Option<Instant>,
@@ -188,7 +196,8 @@ pub(crate) struct App {
     frame_resolver: GameProcessResolver,
     learned_frame_targets: HashMap<String, String>,
     pub(crate) frame_metrics: FrameMetrics,
-    pub(crate) presentmon_probe: PresentMonProbe,
+    pub(crate) frame_probe: FrameProbe,
+    last_frame_probe_refresh: Instant,
     pub(crate) steam: SteamLibrary,
     pub(crate) steam_rx: Receiver<SteamScanResult>,
     pub(crate) session: SessionState,
@@ -264,9 +273,13 @@ pub(crate) fn run() -> io::Result<()> {
     let state = refresh_system_state(&mut sys, None, true, true, config.active_profile());
     let telemetry_rx =
         spawn_telemetry_thread(config.active_profile().clone(), config.telemetry.clone());
+    let hotkey_rx = spawn_hotkey_thread();
     let steam_rx = spawn_steam_scan();
     let (theme_watcher, theme, theme_preset, theme_status) = ThemeWatcher::new();
-    let presentmon_probe = probe_presentmon(config.integrations.presentmon_exe.as_deref());
+    let frame_probe = probe_frame_backend();
+    let overlay_channels = spawn_overlay_thread(config.overlay.clone());
+    let overlay_status = OverlayStatus::disabled(config.overlay.backend);
+    let overlay_update_rate = config.overlay.update_rate;
     let language = config.ui.language;
     let history_view = load_history_view(language);
     let now = Instant::now();
@@ -284,6 +297,11 @@ pub(crate) fn run() -> io::Result<()> {
         theme_preset,
         theme_status,
         telemetry_rx,
+        hotkey_rx,
+        overlay_tx: overlay_channels.tx,
+        overlay_status_rx: overlay_channels.status_rx,
+        overlay_status,
+        last_overlay_sync: now - overlay_update_rate,
         frame_rx: None,
         frame_target: None,
         frame_target_started_at: None,
@@ -292,7 +310,8 @@ pub(crate) fn run() -> io::Result<()> {
         frame_resolver: GameProcessResolver::default(),
         learned_frame_targets: HashMap::new(),
         frame_metrics: FrameMetrics::idle(),
-        presentmon_probe,
+        frame_probe,
+        last_frame_probe_refresh: now,
         steam: SteamLibrary::loading(),
         steam_rx,
         session: SessionState::default(),
@@ -319,6 +338,7 @@ pub(crate) fn run() -> io::Result<()> {
 
     terminal.clear()?;
     let res = run_app(&mut terminal, &mut app);
+    shutdown_overlay(&app);
 
     disable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -364,10 +384,13 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
     let tick_rate = Duration::from_millis(33);
 
     loop {
+        drain_hotkeys(app);
         drain_telemetry(app);
         drain_steam_scan(app);
         drain_frame_metrics(app);
         sync_frame_monitor(app);
+        drain_overlay_status(app);
+        sync_overlay(app);
         reload_theme(app);
 
         terminal.draw(|frame| match app.screen {
@@ -437,6 +460,69 @@ fn run_telemetry_loop(tx: Sender<SystemState>, profile: BoostProfile, telemetry:
         }
 
         thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn drain_hotkeys(app: &mut App) {
+    while let Ok(event) = app.hotkey_rx.try_recv() {
+        match event {
+            HotkeyEvent::ToggleOverlay => toggle_overlay(app),
+            HotkeyEvent::Status(status) => {
+                app.config.status = status;
+            }
+        }
+    }
+}
+
+fn drain_overlay_status(app: &mut App) {
+    while let Ok(status) = app.overlay_status_rx.try_recv() {
+        app.overlay_status = status;
+    }
+}
+
+fn sync_overlay(app: &mut App) {
+    if app.last_overlay_sync.elapsed() < app.config.overlay.update_rate {
+        return;
+    }
+    app.last_overlay_sync = Instant::now();
+    send_overlay_snapshot(app);
+}
+
+fn send_overlay_snapshot(app: &App) {
+    let _ = app.overlay_tx.send(overlay_snapshot(app));
+}
+
+fn shutdown_overlay(app: &App) {
+    let _ = app
+        .overlay_tx
+        .send(OverlaySnapshot::disabled(app.config.overlay.backend));
+    thread::sleep(Duration::from_millis(60));
+}
+
+fn overlay_snapshot(app: &App) -> OverlaySnapshot {
+    if !app.config.overlay.enabled {
+        return OverlaySnapshot::disabled(app.config.overlay.backend);
+    }
+
+    let Some(session) = &app.session.active else {
+        return OverlaySnapshot::armed(app.config.overlay.backend);
+    };
+
+    OverlaySnapshot {
+        armed: true,
+        enabled: true,
+        backend: app.config.overlay.backend,
+        game_name: Some(session.name.clone()),
+        process_name: app.frame_metrics.process_name.clone(),
+        fps: app.frame_metrics.fps,
+        average_fps: app.frame_metrics.average_fps,
+        low_1_fps: app.frame_metrics.low_1_fps,
+        frame_time_ms: app.frame_metrics.frame_time_ms,
+        cpu_usage: app.state.cpu_usage,
+        ram_usage_pct: app.state.ram_used_pct(),
+        gpu_usage_pct: app.state.hardware.gpu_load_pct,
+        gpu_temp_c: app.state.hardware.gpu_temp_c,
+        waste_mb: app.state.total_waste_mb,
     }
 }
 
@@ -520,7 +606,7 @@ fn drain_discovery_metric(app: &mut App, metric: FrameMetrics) {
     if let Some(best) = app.frame_resolver.best() {
         app.frame_metrics = FrameMetrics {
             process_name: Some(best.process_name.clone()),
-            status: format!("PresentMon probing {}", best.process_name),
+            status: format!("RTSS probing {}", best.process_name),
             ..FrameMetrics::idle()
         };
     }
@@ -552,7 +638,7 @@ fn sync_frame_monitor(app: &mut App) {
         app.frame_discovery_failed_at = None;
         app.frame_rx = None;
         app.frame_metrics = FrameMetrics {
-            status: format!("PresentMon resolving {}", game.name),
+            status: format!("RTSS resolving {}", game.name),
             ..FrameMetrics::idle()
         };
         app.fps_history.clear();
@@ -573,7 +659,7 @@ fn sync_frame_monitor(app: &mut App) {
                 app.frame_target_started_at = None;
                 app.frame_rx = None;
                 app.frame_metrics = FrameMetrics {
-                    status: format!("PresentMon resolving {}", game.name),
+                    status: format!("RTSS resolving {}", game.name),
                     ..FrameMetrics::idle()
                 };
                 app.fps_history.clear();
@@ -585,7 +671,7 @@ fn sync_frame_monitor(app: &mut App) {
             app.frame_target_started_at = None;
             app.frame_rx = None;
             app.frame_metrics = FrameMetrics {
-                status: format!("PresentMon resolving {}", game.name),
+                status: format!("RTSS resolving {}", game.name),
                 ..FrameMetrics::idle()
             };
             app.fps_history.clear();
@@ -597,6 +683,13 @@ fn sync_frame_monitor(app: &mut App) {
         && !is_rejected_process(&process_name)
     {
         start_frame_target(app, process_name, Some(app_id));
+        return;
+    }
+
+    if let Some(running) = app.steam.running_process_for_app(&app_id, &app.state)
+        && !is_rejected_process(&running.process_name)
+    {
+        start_frame_target(app, running.process_name, Some(app_id));
         return;
     }
 
@@ -613,9 +706,10 @@ fn sync_frame_monitor(app: &mut App) {
         return;
     }
 
-    if !presentmon_ready(app) {
+    maybe_refresh_frame_probe(app);
+    if !frame_backend_ready(app) {
         app.frame_metrics = FrameMetrics {
-            status: app.presentmon_probe.status.clone(),
+            status: app.frame_probe.status.clone(),
             ..FrameMetrics::idle()
         };
         return;
@@ -651,9 +745,10 @@ fn start_frame_target(app: &mut App, process_name: String, app_id: Option<String
         return;
     }
 
-    if !presentmon_ready(app) {
+    maybe_refresh_frame_probe(app);
+    if !frame_backend_ready(app) {
         app.frame_metrics = FrameMetrics {
-            status: app.presentmon_probe.status.clone(),
+            status: app.frame_probe.status.clone(),
             ..FrameMetrics::idle()
         };
         return;
@@ -668,21 +763,23 @@ fn start_frame_target(app: &mut App, process_name: String, app_id: Option<String
     app.frame_discovery_active = false;
     app.frame_metrics = FrameMetrics {
         process_name: Some(process_name.clone()),
-        status: format!("PresentMon starting {process_name}"),
+        status: format!("RTSS starting {process_name}"),
         ..FrameMetrics::idle()
     };
-    app.frame_rx = Some(spawn_frame_capture(
-        process_name,
-        app.config.integrations.presentmon_exe.clone(),
-    ));
+    app.frame_rx = Some(spawn_frame_capture(process_name));
     app.fps_history.clear();
 }
 
-fn presentmon_ready(app: &App) -> bool {
-    app.presentmon_probe
-        .path
-        .as_ref()
-        .is_some_and(|path| path.is_file())
+fn frame_backend_ready(app: &App) -> bool {
+    app.frame_probe.available
+}
+
+fn maybe_refresh_frame_probe(app: &mut App) {
+    if app.frame_probe.available || app.last_frame_probe_refresh.elapsed() < FRAME_PROBE_INTERVAL {
+        return;
+    }
+
+    refresh_frame_probe(app);
 }
 
 fn start_frame_discovery(app: &mut App, game: &SteamGame) {
@@ -691,13 +788,10 @@ fn start_frame_discovery(app: &mut App, game: &SteamGame) {
     app.frame_discovery_active = true;
     app.frame_discovery_failed_at = None;
     app.frame_metrics = FrameMetrics {
-        status: format!("PresentMon resolving {}", game.name),
+        status: format!("RTSS resolving {}", game.name),
         ..FrameMetrics::idle()
     };
-    app.frame_rx = Some(spawn_frame_discovery(
-        app.config.integrations.presentmon_exe.clone(),
-        discovery_exclusions(),
-    ));
+    app.frame_rx = Some(spawn_frame_discovery(discovery_exclusions()));
     app.fps_history.clear();
 }
 
@@ -722,9 +816,30 @@ fn stop_frame_monitor(app: &mut App) {
     app.fps_history.clear();
 }
 
-fn refresh_presentmon_probe(app: &mut App) {
-    app.presentmon_probe = probe_presentmon(app.config.integrations.presentmon_exe.as_deref());
+fn refresh_frame_probe(app: &mut App) {
+    app.frame_probe = probe_frame_backend();
     app.frame_discovery_failed_at = None;
+    app.last_frame_probe_refresh = Instant::now();
+}
+
+fn toggle_overlay(app: &mut App) {
+    app.config.toggle_overlay_enabled();
+    app.overlay_status = if app.config.overlay.enabled {
+        OverlayStatus {
+            active: false,
+            backend: app.config.overlay.backend,
+            message: "RTSS overlay armed; waiting for Steam game".to_string(),
+        }
+    } else {
+        OverlayStatus::disabled(app.config.overlay.backend)
+    };
+    app.last_overlay_sync = Instant::now() - app.config.overlay.update_rate;
+    send_overlay_snapshot(app);
+}
+
+fn is_overlay_toggle_hotkey(code: KeyCode, modifiers: KeyModifiers) -> bool {
+    (matches!(code, KeyCode::F(12)) && modifiers.contains(KeyModifiers::SHIFT))
+        || matches!(code, KeyCode::F(24))
 }
 
 fn request_steam_scan(app: &mut App) {
@@ -855,7 +970,7 @@ fn set_tab(app: &mut App, tab: Tab) {
     if app.tab == Tab::History {
         refresh_history(app);
     } else if matches!(app.tab, Tab::Frames | Tab::Settings) {
-        refresh_presentmon_probe(app);
+        refresh_frame_probe(app);
     }
 }
 
@@ -1575,6 +1690,11 @@ fn handle_event(app: &mut App, event: Event) -> bool {
     if let Event::Key(key) = event
         && key.kind == KeyEventKind::Press
     {
+        if is_overlay_toggle_hotkey(key.code, key.modifiers) {
+            toggle_overlay(app);
+            return false;
+        }
+
         if handle_process_filter_input(app, key.code) {
             return false;
         }
@@ -1603,10 +1723,15 @@ fn handle_event(app: &mut App, event: Event) -> bool {
                     refresh_history(app);
                 }
                 KeyCode::Char('r') | KeyCode::Char('R') if app.tab == Tab::Settings => {
-                    refresh_presentmon_probe(app);
+                    refresh_frame_probe(app);
                 }
                 KeyCode::Char('r') | KeyCode::Char('R') if app.tab == Tab::Frames => {
-                    refresh_presentmon_probe(app);
+                    refresh_frame_probe(app);
+                }
+                KeyCode::Char('o') | KeyCode::Char('O')
+                    if matches!(app.tab, Tab::Frames | Tab::Settings) =>
+                {
+                    toggle_overlay(app);
                 }
                 KeyCode::Char('e') | KeyCode::Char('E') if app.tab == Tab::Frames => {
                     let output = finish_active_session_from_user(app);
@@ -2044,5 +2169,18 @@ mod tests {
 
             assert_eq!(Tab::from_nav_column(column, total_width), Some(slot.tab));
         }
+    }
+
+    #[test]
+    fn overlay_hotkey_should_accept_shift_f12_variants() {
+        assert!(is_overlay_toggle_hotkey(
+            KeyCode::F(12),
+            KeyModifiers::SHIFT
+        ));
+        assert!(is_overlay_toggle_hotkey(KeyCode::F(24), KeyModifiers::NONE));
+        assert!(!is_overlay_toggle_hotkey(
+            KeyCode::F(12),
+            KeyModifiers::NONE
+        ));
     }
 }

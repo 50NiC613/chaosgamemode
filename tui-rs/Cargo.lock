@@ -44,6 +44,7 @@ dependencies = [
  "serde",
  "sysinfo",
  "toml",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
