@@ -25,6 +25,7 @@ pub(crate) struct OverlaySnapshot {
     pub(crate) average_fps: Option<f64>,
     pub(crate) low_1_fps: Option<f64>,
     pub(crate) frame_time_ms: Option<f64>,
+    pub(crate) performance_alert: Option<String>,
     pub(crate) cpu_usage: f32,
     pub(crate) ram_usage_pct: u16,
     pub(crate) gpu_usage_pct: Option<u16>,
@@ -81,6 +82,7 @@ impl OverlaySnapshot {
             average_fps: None,
             low_1_fps: None,
             frame_time_ms: None,
+            performance_alert: None,
             cpu_usage: 0.0,
             ram_usage_pct: 0,
             gpu_usage_pct: None,
@@ -216,12 +218,18 @@ fn format_overlay_text(snapshot: &OverlaySnapshot) -> String {
         .map(|value| format!("{value:.0}C"))
         .unwrap_or_else(|| "--C".to_string());
 
-    format!(
+    let body = format!(
         "CPM  FPS {fps}  AVG {avg}  1% {low}\nCPU {:>3}%  GPU {gpu} {gpu_temp}  RAM {:>3}%\n{frame} ms  WASTE {:.0} MB  {game}\n{process}",
         snapshot.cpu_usage.round().clamp(0.0, 100.0) as u16,
         snapshot.ram_usage_pct,
         snapshot.waste_mb,
-    )
+    );
+
+    if let Some(alert) = snapshot.performance_alert.as_deref() {
+        format!("{body}\nSAFE {alert}")
+    } else {
+        body
+    }
 }
 
 fn format_metric(value: Option<f64>, decimals: usize, fallback: &str) -> String {
@@ -531,6 +539,7 @@ mod tests {
             average_fps: Some(58.7),
             low_1_fps: Some(44.0),
             frame_time_ms: Some(16.4),
+            performance_alert: None,
             cpu_usage: 22.0,
             ram_usage_pct: 78,
             gpu_usage_pct: Some(91),
@@ -540,6 +549,17 @@ mod tests {
 
         assert!(text.contains("FPS  61"));
         assert!(text.contains("Cyberpunk 2077"));
+    }
+
+    #[test]
+    fn overlay_text_should_include_performance_alert() {
+        let mut snapshot = OverlaySnapshot::armed(OverlayBackend::Rtss);
+        snapshot.enabled = true;
+        snapshot.performance_alert = Some("Overdrive FPS collapse; press 2 to restore".to_string());
+
+        let text = format_overlay_text(&snapshot);
+
+        assert!(text.contains("SAFE Overdrive FPS collapse"));
     }
 
     #[test]

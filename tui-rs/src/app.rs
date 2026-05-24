@@ -44,6 +44,10 @@ use crate::ui::{render_confirm, render_monitor, render_output, render_theme_menu
 const HISTORY_VIEW_LIMIT: usize = 240;
 const FRAME_PROBE_INTERVAL: Duration = Duration::from_secs(5);
 const FRAME_EVENT_LIMIT: usize = 10;
+const FRAME_GUARD_WARMUP: Duration = Duration::from_secs(20);
+const FRAME_COLLAPSE_THRESHOLD_FPS: f64 = 10.0;
+const FRAME_COLLAPSE_DURATION: Duration = Duration::from_secs(6);
+const FRAME_RECOVERY_THRESHOLD_FPS: f64 = 18.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Screen {
@@ -86,6 +90,7 @@ pub(crate) enum FrameEventKind {
     Session,
     Capture,
     Overlay,
+    Guard,
 }
 
 #[derive(Clone, Debug)]
@@ -100,6 +105,19 @@ pub(crate) struct FrameEventLog {
     entries: VecDeque<FrameEvent>,
 }
 
+#[derive(Default)]
+struct FrameGuard {
+    low_fps_since: Option<Instant>,
+    alerted: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FrameGuardEvent {
+    Alert,
+    Recovered,
+    Clear,
+}
+
 impl FrameEventKind {
     pub(crate) const fn label(self) -> &'static str {
         match self {
@@ -107,6 +125,7 @@ impl FrameEventKind {
             Self::Session => "GAME",
             Self::Capture => "FPS",
             Self::Overlay => "OVR",
+            Self::Guard => "SAFE",
         }
     }
 }
@@ -144,6 +163,52 @@ impl FrameEventLog {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+}
+
+impl FrameGuard {
+    fn observe(
+        &mut self,
+        now: Instant,
+        session_started_at: Option<Instant>,
+        overdrive: bool,
+        fps: Option<f64>,
+    ) -> Option<FrameGuardEvent> {
+        let Some(session_started_at) = session_started_at else {
+            let was_alerted = self.alerted;
+            self.reset();
+            return was_alerted.then_some(FrameGuardEvent::Clear);
+        };
+
+        if !overdrive || now.duration_since(session_started_at) < FRAME_GUARD_WARMUP {
+            let was_alerted = self.alerted;
+            self.reset();
+            return was_alerted.then_some(FrameGuardEvent::Clear);
+        }
+
+        let fps = fps?;
+
+        if fps < FRAME_COLLAPSE_THRESHOLD_FPS {
+            let since = *self.low_fps_since.get_or_insert(now);
+            if !self.alerted && now.duration_since(since) >= FRAME_COLLAPSE_DURATION {
+                self.alerted = true;
+                return Some(FrameGuardEvent::Alert);
+            }
+            return None;
+        }
+
+        self.low_fps_since = None;
+        if self.alerted && fps >= FRAME_RECOVERY_THRESHOLD_FPS {
+            self.alerted = false;
+            return Some(FrameGuardEvent::Recovered);
+        }
+
+        None
+    }
+
+    fn reset(&mut self) {
+        self.low_fps_since = None;
+        self.alerted = false;
     }
 }
 
@@ -266,6 +331,8 @@ pub(crate) struct App {
     pub(crate) frame_metrics: FrameMetrics,
     pub(crate) frame_probe: FrameProbe,
     pub(crate) frame_events: FrameEventLog,
+    frame_guard: FrameGuard,
+    pub(crate) performance_alert: Option<String>,
     last_frame_probe_refresh: Instant,
     pub(crate) steam: SteamLibrary,
     pub(crate) steam_rx: Receiver<SteamScanResult>,
@@ -381,6 +448,8 @@ pub(crate) fn run() -> io::Result<()> {
         frame_metrics: FrameMetrics::idle(),
         frame_probe,
         frame_events: FrameEventLog::default(),
+        frame_guard: FrameGuard::default(),
+        performance_alert: None,
         last_frame_probe_refresh: now,
         steam: SteamLibrary::loading(),
         steam_rx,
@@ -463,6 +532,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         drain_steam_scan(app);
         drain_frame_metrics(app);
         sync_frame_monitor(app);
+        sync_frame_guard(app);
         drain_overlay_status(app);
         sync_overlay(app);
         reload_theme(app);
@@ -598,6 +668,7 @@ fn overlay_snapshot(app: &App) -> OverlaySnapshot {
         average_fps: app.frame_metrics.average_fps,
         low_1_fps: app.frame_metrics.low_1_fps,
         frame_time_ms: app.frame_metrics.frame_time_ms,
+        performance_alert: app.performance_alert.clone(),
         cpu_usage: app.state.cpu_usage,
         ram_usage_pct: app.state.ram_used_pct(),
         gpu_usage_pct: app.state.hardware.gpu_load_pct,
@@ -643,6 +714,37 @@ fn apply_frame_metrics(app: &mut App, metrics: FrameMetrics) {
 
     if let Some(message) = event_message {
         record_frame_event(app, FrameEventKind::Capture, message);
+    }
+}
+
+fn sync_frame_guard(app: &mut App) {
+    let now = Instant::now();
+    let session = app.session.active.as_ref();
+    let event = app.frame_guard.observe(
+        now,
+        session.map(|session| session.started_at),
+        session.is_some_and(|session| session.overdrive),
+        app.frame_metrics.fps,
+    );
+
+    match event {
+        Some(FrameGuardEvent::Alert) => {
+            let message = "Overdrive FPS collapse; press 2 to restore".to_string();
+            app.performance_alert = Some(message.clone());
+            record_frame_event(app, FrameEventKind::Guard, message);
+        }
+        Some(FrameGuardEvent::Recovered) => {
+            app.performance_alert = None;
+            record_frame_event(
+                app,
+                FrameEventKind::Guard,
+                "Overdrive FPS recovered".to_string(),
+            );
+        }
+        Some(FrameGuardEvent::Clear) => {
+            app.performance_alert = None;
+        }
+        None => {}
     }
 }
 
@@ -2356,5 +2458,59 @@ mod tests {
 
         assert_eq!(entries.len(), FRAME_EVENT_LIMIT);
         assert_eq!(entries[0].message, "event 2");
+    }
+
+    #[test]
+    fn frame_guard_should_alert_after_sustained_overdrive_collapse() {
+        let mut guard = FrameGuard::default();
+        let session_start = Instant::now();
+        let first_low = session_start + FRAME_GUARD_WARMUP + Duration::from_secs(1);
+        let alert_at = first_low + FRAME_COLLAPSE_DURATION;
+
+        assert_eq!(
+            guard.observe(first_low, Some(session_start), true, Some(3.0)),
+            None
+        );
+        assert_eq!(
+            guard.observe(alert_at, Some(session_start), true, Some(3.0)),
+            Some(FrameGuardEvent::Alert)
+        );
+    }
+
+    #[test]
+    fn frame_guard_should_recover_after_fps_returns() {
+        let mut guard = FrameGuard::default();
+        let session_start = Instant::now();
+        let first_low = session_start + FRAME_GUARD_WARMUP + Duration::from_secs(1);
+        let alert_at = first_low + FRAME_COLLAPSE_DURATION;
+        let recovered_at = alert_at + Duration::from_secs(1);
+
+        guard.observe(first_low, Some(session_start), true, Some(3.0));
+        guard.observe(alert_at, Some(session_start), true, Some(3.0));
+
+        assert_eq!(
+            guard.observe(
+                recovered_at,
+                Some(session_start),
+                true,
+                Some(FRAME_RECOVERY_THRESHOLD_FPS)
+            ),
+            Some(FrameGuardEvent::Recovered)
+        );
+    }
+
+    #[test]
+    fn frame_guard_should_ignore_normal_sessions() {
+        let mut guard = FrameGuard::default();
+        let session_start = Instant::now();
+        let first_low = session_start + FRAME_GUARD_WARMUP + Duration::from_secs(1);
+        let alert_at = first_low + FRAME_COLLAPSE_DURATION;
+
+        guard.observe(first_low, Some(session_start), false, Some(3.0));
+
+        assert_eq!(
+            guard.observe(alert_at, Some(session_start), false, Some(3.0)),
+            None
+        );
     }
 }

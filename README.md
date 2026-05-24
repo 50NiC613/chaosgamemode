@@ -25,6 +25,7 @@ Chaos Game Mode is a terminal dashboard and optimizer for Windows gaming session
 - Opens a dedicated `Frames` tab for MangoHUD-style FPS, frametime, RTSS status, GPU/CPU traces, and active game context.
 - Shows a Frames hook log so RTSS, Steam session, game process detection, FPS capture, and overlay state can be checked at a glance.
 - Can publish a lightweight fullscreen OSD through RivaTuner Statistics Server (RTSS), so FPS/session metrics can appear over exclusive fullscreen games.
+- Warns when an Overdrive session collapses under very low FPS for several seconds, without restoring automatically.
 - Marks processes as `TARGET`, `KEEP`, `WATCH`, or `HIDDEN` so you can tune what the optimizer should touch.
 - Protects important apps by default, including SteelSeries tools.
 - Applies reversible Overdrive actions: high-performance power plan, service cleanup, Steam priority, process cleanup, and optional Explorer handling by profile.
@@ -61,6 +62,8 @@ When a Steam game is launched or auto-detected, the TUI can move into the `Frame
 
 The `Frames` tab includes a hook status panel and short hook log. Use it to verify RTSS readiness, the active Steam session, the resolved game process, live FPS samples, and the fullscreen overlay state.
 
+During an Overdrive-launched session, Chaos Game Mode also watches for severe FPS collapse. If live FPS stays below 10 after the warmup window, the Frames tab and RTSS overlay show a guard warning so you can press `2` to restore the system or inspect the active profile.
+
 ### Fullscreen Overlay
 
 Exclusive fullscreen overlays need a low-level OSD host. Chaos Game Mode uses an RTSS shared-memory backend for this instead of a normal transparent desktop window.
@@ -96,7 +99,7 @@ Requirements:
 Install or update from the repository:
 
 ```powershell
-cd D:\Dev\chaosgamemode
+cd C:\src\chaosgamemode
 .\install.ps1
 ```
 
@@ -281,6 +284,7 @@ Chaos Game Mode es un dashboard y optimizador en terminal para sesiones de gamin
 - Abre una tab dedicada `Frames`, estilo MangoHUD, con FPS, frametime, estado de RTSS, trazas GPU/CPU y contexto del juego activo.
 - Muestra un hook log en `Frames` para revisar RTSS, sesion de Steam, deteccion del proceso del juego, captura FPS y estado del overlay.
 - Puede publicar un OSD ligero via RivaTuner Statistics Server (RTSS), para ver metricas encima de juegos en fullscreen exclusivo.
+- Avisa si una sesion con Overdrive cae por debajo de FPS muy bajos durante varios segundos, sin restaurar automaticamente.
 - Clasifica procesos como `TARGET`, `KEEP`, `WATCH` u `HIDDEN` para decidir que se puede cerrar y que debe respetarse.
 - Protege apps importantes por defecto, incluyendo herramientas de SteelSeries.
 - Aplica acciones reversibles: plan de energia de alto rendimiento, limpieza de servicios, prioridad a Steam, limpieza de procesos y manejo opcional de Explorer segun perfil.
@@ -315,6 +319,8 @@ Chaos Game Mode espera automaticamente launchers y ventanas auxiliares de Steam,
 
 La tab `Frames` incluye un panel de hook status y un hook log corto. Sirve para confirmar si RTSS esta listo, si hay sesion Steam activa, que proceso del juego se resolvio, si ya hay FPS en vivo y si el overlay fullscreen esta activo.
 
+Durante una sesion lanzada con Overdrive, Chaos Game Mode tambien vigila caidas severas de FPS. Si los FPS se quedan por debajo de 10 despues de la ventana inicial, la tab Frames y el overlay RTSS muestran una alerta para que puedas pulsar `2` y restaurar el sistema o revisar el perfil activo.
+
 ### Instalacion
 
 Requisitos:
@@ -328,7 +334,7 @@ Requisitos:
 Instalar o actualizar desde el repo:
 
 ```powershell
-cd D:\Dev\chaosgamemode
+cd C:\src\chaosgamemode
 .\install.ps1
 ```
 
@@ -439,21 +445,21 @@ Steam queda como base actual. Para futuro se plantea:
 Run locally:
 
 ```powershell
-cd D:\Dev\chaosgamemode\tui-rs
+cd C:\src\chaosgamemode\tui-rs
 cargo run
 ```
 
 Recommended live development loop:
 
 ```powershell
-cd D:\Dev\chaosgamemode
+cd C:\src\chaosgamemode
 .\dev-watch.ps1
 ```
 
 Quality checks:
 
 ```powershell
-cd D:\Dev\chaosgamemode\tui-rs
+cd C:\src\chaosgamemode\tui-rs
 cargo fmt -- --check
 cargo test
 cargo clippy --all-targets --all-features --locked -- -D warnings

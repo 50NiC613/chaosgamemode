@@ -1008,6 +1008,15 @@ fn render_frames_session_panel(frame: &mut Frame, app: &App, area: Rect) {
         metric_label(theme, lang.label_overlay()),
         metric_value(overlay_config_label(app, lang), overlay_config_color(app)),
     ]));
+    if let Some(alert) = app.performance_alert.as_deref() {
+        lines.push(Line::from(vec![
+            metric_label(theme, "GUARD"),
+            Span::styled(
+                crate::metrics::truncate(&localized_performance_alert(alert, lang), 42),
+                Style::new().fg(theme.hot_red),
+            ),
+        ]));
+    }
     lines.push(Line::from(vec![
         metric_label(theme, lang.label_status()),
         Span::styled(
@@ -1036,7 +1045,7 @@ fn render_frames_metrics_panel(frame: &mut Frame, app: &App, area: Rect) {
         } else {
             lang.frames_idle_status()
         };
-        let lines = vec![
+        let mut lines = vec![
             Line::from(vec![
                 metric_label(theme, lang.label_capture()),
                 Span::styled(status, Style::new().fg(theme.cyber_yellow)),
@@ -1067,6 +1076,15 @@ fn render_frames_metrics_panel(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(lang.frames_idle_hint(), Style::new().fg(theme.muted)),
             ]),
         ];
+        if let Some(alert) = app.performance_alert.as_deref() {
+            lines.push(Line::from(vec![
+                metric_label(theme, "GUARD"),
+                Span::styled(
+                    crate::metrics::truncate(&localized_performance_alert(alert, lang), 46),
+                    Style::new().fg(theme.hot_red),
+                ),
+            ]));
+        }
 
         let panel = Paragraph::new(Text::from(lines))
             .block(accent_block(
@@ -1079,7 +1097,7 @@ fn render_frames_metrics_panel(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let lines = vec![
+    let mut lines = vec![
         Line::from(vec![
             metric_label(theme, "FPS"),
             metric_value(format_frame_fps(app.frame_metrics.fps), theme.cyber_yellow),
@@ -1136,6 +1154,15 @@ fn render_frames_metrics_panel(frame: &mut Frame, app: &App, area: Rect) {
             ),
         ]),
     ];
+    if let Some(alert) = app.performance_alert.as_deref() {
+        lines.push(Line::from(vec![
+            metric_label(theme, "GUARD"),
+            Span::styled(
+                crate::metrics::truncate(&localized_performance_alert(alert, lang), 46),
+                Style::new().fg(theme.hot_red),
+            ),
+        ]));
+    }
 
     let panel = Paragraph::new(Text::from(lines))
         .block(accent_block(
@@ -1436,7 +1463,7 @@ fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
     let frame_status = frame_hook_status(app, lang);
     let overlay_status = localized_overlay_status(&app.overlay_status.message, lang);
 
-    let lines = vec![
+    let mut lines = vec![
         Line::from(vec![
             metric_label(theme, lang.label_rtss()),
             Span::styled(
@@ -1487,6 +1514,17 @@ fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
                 Style::new().fg(theme.muted),
             ),
         ]),
+    ];
+    if let Some(alert) = app.performance_alert.as_deref() {
+        lines.push(Line::from(vec![
+            metric_label(theme, "GUARD"),
+            Span::styled(
+                crate::metrics::truncate(&localized_performance_alert(alert, lang), 40),
+                Style::new().fg(theme.hot_red),
+            ),
+        ]));
+    }
+    lines.extend([
         Line::from(""),
         Line::from(vec![
             keycap(theme, "R"),
@@ -1496,10 +1534,10 @@ fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
                 format!(" {}  ", lang.overlay()),
                 Style::new().fg(theme.muted),
             ),
-            keycap(theme, "E"),
-            Span::styled(format!(" {}", lang.end()), Style::new().fg(theme.muted)),
+            keycap(theme, "2"),
+            Span::styled(format!(" {}", lang.restore()), Style::new().fg(theme.muted)),
         ]),
-    ];
+    ]);
 
     let panel = Paragraph::new(Text::from(lines))
         .block(accent_block(theme, "HOOK STATUS", theme.neon_magenta))
@@ -1557,6 +1595,7 @@ fn localized_frame_event_message(event: &FrameEvent, lang: Language) -> String {
         FrameEventKind::Capture => localized_frame_status(&event.message, lang),
         FrameEventKind::Overlay => localized_overlay_status(&event.message, lang),
         FrameEventKind::Session => localized_session_event(&event.message, lang),
+        FrameEventKind::Guard => localized_performance_alert(&event.message, lang),
     }
 }
 
@@ -1598,6 +1637,20 @@ fn localized_overlay_status(message: &str, lang: Language) -> String {
     }
 }
 
+fn localized_performance_alert(message: &str, lang: Language) -> String {
+    match message {
+        "Overdrive FPS collapse; press 2 to restore" => match lang {
+            Language::Spanish => "Overdrive bajo 10 FPS; pulsa 2 para restaurar".to_string(),
+            Language::English => message.to_string(),
+        },
+        "Overdrive FPS recovered" => match lang {
+            Language::Spanish => "FPS recuperados en Overdrive".to_string(),
+            Language::English => message.to_string(),
+        },
+        _ => message.to_string(),
+    }
+}
+
 fn frame_event_color(theme: &crate::theme::Theme, event: &FrameEvent) -> Color {
     match event.kind {
         FrameEventKind::Probe if event.message == "RTSS listo" => theme.acid_green,
@@ -1609,6 +1662,8 @@ fn frame_event_color(theme: &crate::theme::Theme, event: &FrameEvent) -> Color {
         FrameEventKind::Overlay if event.message == "RTSS overlay active" => theme.acid_green,
         FrameEventKind::Overlay if event.message == "RTSS overlay off" => theme.muted,
         FrameEventKind::Overlay => theme.neon_magenta,
+        FrameEventKind::Guard if event.message == "Overdrive FPS recovered" => theme.acid_green,
+        FrameEventKind::Guard => theme.hot_red,
     }
 }
 
