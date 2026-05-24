@@ -1,0 +1,166 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v0.1.0-test or v1.0.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build MSI and publish release
+    runs-on: windows-latest
+
+    env:
+      CARGO_TERM_COLOR: always
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: meta
+        shell: pwsh
+        run: |
+          $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "${{ inputs.tag }}"
+          } else {
+            "${{ github.ref_name }}"
+          }
+
+          if ($tag -notmatch '^v\d+\.\d+\.\d+([-.][A-Za-z0-9.-]+)?$') {
+            throw "Tag must look like v1.0.0 or v0.1.0-test. Got: $tag"
+          }
+
+          $packageVersion = ($tag -replace '^v', '') -replace '[-+].*$', ''
+          $isPrerelease = if ($tag -match '[-.]test|[-.]alpha|[-.]beta|[-.]rc') { "true" } else { "false" }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "package_version=$packageVersion" >> $env:GITHUB_OUTPUT
+          "is_prerelease=$isPrerelease" >> $env:GITHUB_OUTPUT
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tui-rs -> target
+
+      - name: Check formatting
+        working-directory: tui-rs
+        run: cargo fmt -- --check
+
+      - name: Run tests
+        working-directory: tui-rs
+        run: cargo test
+
+      - name: Run clippy
+        working-directory: tui-rs
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+      - name: Build release binary
+        working-directory: tui-rs
+        run: cargo build --release --locked
+
+      - name: Build MSI
+        shell: pwsh
+        run: |
+          .\build-msi.ps1 -SkipBuild -InstallWix -PackageVersion "${{ steps.meta.outputs.package_version }}"
+
+          New-Item -ItemType Directory -Force -Path dist\release | Out-Null
+          Copy-Item `
+            -Path "dist\msi\ChaosGameMode-${{ steps.meta.outputs.package_version }}-x64.msi" `
+            -Destination "dist\release\ChaosGameMode-${{ steps.meta.outputs.tag }}-x64.msi" `
+            -Force
+          Copy-Item `
+            -Path "tui-rs\target\release\chaosgamemode.exe" `
+            -Destination "dist\release\chaosgamemode-${{ steps.meta.outputs.tag }}.exe" `
+            -Force
+          Copy-Item -Path "tui-rs\config.toml" -Destination "dist\release\config.toml" -Force
+          Copy-Item -Path "tui-rs\theme.toml" -Destination "dist\release\theme.toml" -Force
+
+      - name: Write release notes
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.meta.outputs.tag }}"
+          $notes = @"
+          ## Chaos Game Mode $tag
+
+          Native Windows TUI for Steam-first gaming sessions.
+
+          ### Install
+          Download and run ``ChaosGameMode-$tag-x64.msi``.
+
+          After installing, open a new terminal and run:
+
+          ````powershell
+          chaosgamemode
+          ````
+
+          ### Included assets
+          - MSI installer
+          - Standalone ``chaosgamemode.exe``
+          - Default ``config.toml``
+          - Default ``theme.toml``
+
+          ### Notes
+          - Steam is the current supported game platform.
+          - PresentMon Console is optional and enables FPS, frametime, and 1% low metrics.
+          - UI language is configured in ``config.toml`` under ``[ui] language = "es"`` or ``"en"``.
+          "@
+          $notes | Set-Content -Path dist\release-notes.md -Encoding UTF8
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-game-mode-${{ steps.meta.outputs.tag }}
+          path: |
+            dist/release/*
+            dist/release-notes.md
+
+      - name: Publish GitHub release
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.meta.outputs.tag }}"
+          $assets = @(
+            "dist\release\ChaosGameMode-$tag-x64.msi",
+            "dist\release\chaosgamemode-$tag.exe",
+            "dist\release\config.toml",
+            "dist\release\theme.toml"
+          )
+
+          if (gh release view $tag *> $null) {
+            gh release upload $tag @assets --clobber
+            gh release edit $tag --title "Chaos Game Mode $tag" --notes-file dist\release-notes.md
+          } else {
+            $args = @(
+              "release",
+              "create",
+              $tag
+            ) + $assets + @(
+              "--title",
+              "Chaos Game Mode $tag",
+              "--notes-file",
+              "dist\release-notes.md"
+            )
+
+            if ("${{ steps.meta.outputs.is_prerelease }}" -eq "true") {
+              $args += "--prerelease"
+            } else {
+              $args += "--latest"
+            }
+
+            gh @args
+          }

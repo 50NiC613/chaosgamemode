@@ -4,6 +4,9 @@ param(
     [string]$OutputDir = (Join-Path $PSScriptRoot "dist\msi"),
 
     [Parameter(Mandatory = $false)]
+    [string]$PackageVersion,
+
+    [Parameter(Mandatory = $false)]
     [switch]$SkipBuild,
 
     [Parameter(Mandatory = $false)]
@@ -200,7 +203,14 @@ if (-not (Test-Path $ReleaseExe)) {
     throw "No se encontro el binario release: $ReleaseExe"
 }
 
-$version = Get-CargoVersion
+$version = if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
+    Get-CargoVersion
+} else {
+    $PackageVersion
+}
+if ($version -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
+    throw "PackageVersion debe ser numerico para MSI, por ejemplo 1.0.0. Valor recibido: $version"
+}
 $OutputDir = [System.IO.Path]::GetFullPath($OutputDir)
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 Clear-DirectoryInside -Target $PayloadDir -Parent $OutputDir
