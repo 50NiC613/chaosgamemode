@@ -25,6 +25,7 @@ Chaos Game Mode is a terminal dashboard and optimizer for Windows gaming session
 - Opens a dedicated `Frames` tab for MangoHUD-style FPS, frametime, RTSS status, GPU/CPU traces, and active game context.
 - Shows a Frames hook log so RTSS, Steam session, game process detection, FPS capture, and overlay state can be checked at a glance.
 - Can publish a lightweight fullscreen OSD through RivaTuner Statistics Server (RTSS), so FPS/session metrics can appear over exclusive fullscreen games.
+- Uses a compact RTSS HUD layout with LIVE/SYNC state, FPS, average FPS, 1% low, frametime, GPU/CPU/RAM, session, profile, and target process.
 - Warns when an Overdrive session collapses under very low FPS for several seconds, without restoring automatically.
 - Marks processes as `TARGET`, `KEEP`, `WATCH`, or `HIDDEN` so you can tune what the optimizer should touch.
 - Protects important apps by default, including SteelSeries tools.
@@ -288,6 +289,7 @@ Chaos Game Mode es un dashboard y optimizador en terminal para sesiones de gamin
 - Abre una tab dedicada `Frames`, estilo MangoHUD, con FPS, frametime, estado de RTSS, trazas GPU/CPU y contexto del juego activo.
 - Muestra un hook log en `Frames` para revisar RTSS, sesion de Steam, deteccion del proceso del juego, captura FPS y estado del overlay.
 - Puede publicar un OSD ligero via RivaTuner Statistics Server (RTSS), para ver metricas encima de juegos en fullscreen exclusivo.
+- Usa un HUD compacto en RTSS con estado LIVE/SYNC, FPS, FPS promedio, 1% low, frametime, GPU/CPU/RAM, sesion, perfil y proceso target.
 - Avisa si una sesion con Overdrive cae por debajo de FPS muy bajos durante varios segundos, sin restaurar automaticamente.
 - Clasifica procesos como `TARGET`, `KEEP`, `WATCH` u `HIDDEN` para decidir que se puede cerrar y que debe respetarse.
 - Protege apps importantes por defecto, incluyendo herramientas de SteelSeries.

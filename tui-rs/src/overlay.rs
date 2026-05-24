@@ -2,6 +2,8 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::metrics::format_duration;
+
 #[derive(Clone)]
 pub(crate) struct OverlayConfig {
     pub(crate) enabled: bool,
@@ -25,7 +27,12 @@ pub(crate) struct OverlaySnapshot {
     pub(crate) average_fps: Option<f64>,
     pub(crate) low_1_fps: Option<f64>,
     pub(crate) frame_time_ms: Option<f64>,
+    pub(crate) frame_samples: usize,
+    pub(crate) frame_status: String,
     pub(crate) performance_alert: Option<String>,
+    pub(crate) profile_name: String,
+    pub(crate) overdrive: bool,
+    pub(crate) session_elapsed: Option<Duration>,
     pub(crate) cpu_usage: f32,
     pub(crate) ram_usage_pct: u16,
     pub(crate) gpu_usage_pct: Option<u16>,
@@ -82,7 +89,12 @@ impl OverlaySnapshot {
             average_fps: None,
             low_1_fps: None,
             frame_time_ms: None,
+            frame_samples: 0,
+            frame_status: "RTSS overlay off".to_string(),
             performance_alert: None,
+            profile_name: "balanced".to_string(),
+            overdrive: false,
+            session_elapsed: None,
             cpu_usage: 0.0,
             ram_usage_pct: 0,
             gpu_usage_pct: None,
@@ -205,10 +217,7 @@ fn format_overlay_text(snapshot: &OverlaySnapshot) -> String {
         .map(shorten_process_name)
         .unwrap_or_else(|| "resolving".to_string());
 
-    let fps = format_metric(snapshot.fps, 0, "--");
-    let avg = format_metric(snapshot.average_fps, 0, "--");
-    let low = format_metric(snapshot.low_1_fps, 0, "--");
-    let frame = format_metric(snapshot.frame_time_ms, 1, "--");
+    let mode = overlay_mode(snapshot);
     let gpu = snapshot
         .gpu_usage_pct
         .map(|value| format!("{value:>3}%"))
@@ -217,36 +226,92 @@ fn format_overlay_text(snapshot: &OverlaySnapshot) -> String {
         .gpu_temp_c
         .map(|value| format!("{value:.0}C"))
         .unwrap_or_else(|| "--C".to_string());
+    let session = snapshot
+        .session_elapsed
+        .map(format_duration)
+        .unwrap_or_else(|| "--:--:--".to_string());
+    let profile = shorten(&snapshot.profile_name, 10);
+    let run_mode = if snapshot.overdrive { "ODRV" } else { "NORM" };
+    let waste = snapshot.waste_mb.round().clamp(0.0, 99_999.0) as u32;
 
-    let body = format!(
-        "CPM  FPS {fps}  AVG {avg}  1% {low}\nCPU {:>3}%  GPU {gpu} {gpu_temp}  RAM {:>3}%\n{frame} ms  WASTE {:.0} MB  {game}\n{process}",
-        snapshot.cpu_usage.round().clamp(0.0, 100.0) as u16,
-        snapshot.ram_usage_pct,
-        snapshot.waste_mb,
-    );
+    let mut lines = vec![
+        format!("CPM {mode:<4}  {game}"),
+        overlay_frame_line(snapshot),
+        format!(
+            "GPU {gpu} {gpu_temp}  CPU {:>3}%  RAM {:>3}%",
+            snapshot.cpu_usage.round().clamp(0.0, 100.0) as u16,
+            snapshot.ram_usage_pct,
+        ),
+        format!("{session}  {run_mode} {profile}  WASTE {waste}MB"),
+        format!("TARGET {process}"),
+    ];
 
     if let Some(alert) = snapshot.performance_alert.as_deref() {
-        format!("{body}\nSAFE {alert}")
+        lines.push(format!("SAFE {}", shorten(alert, 48)));
+    }
+
+    lines.join("\n")
+}
+
+fn overlay_mode(snapshot: &OverlaySnapshot) -> &'static str {
+    if snapshot.fps.is_some() {
+        "LIVE"
+    } else if snapshot.frame_samples > 0 {
+        "HOLD"
     } else {
-        body
+        "SYNC"
     }
 }
 
-fn format_metric(value: Option<f64>, decimals: usize, fallback: &str) -> String {
+fn overlay_frame_line(snapshot: &OverlaySnapshot) -> String {
+    let Some(fps) = snapshot.fps else {
+        return format!(
+            "FPS SYNC  {}",
+            shorten_overlay_status(&snapshot.frame_status, 35)
+        );
+    };
+
+    let avg = snapshot.average_fps.or(Some(fps));
+    let low = snapshot.low_1_fps.or(Some(fps));
+    let frame = snapshot.frame_time_ms;
+
+    format!(
+        "FPS {}  AVG {}  1%L {}  FT {}ms",
+        format_fps(Some(fps)),
+        format_fps(avg),
+        format_fps(low),
+        format_ms(frame),
+    )
+}
+
+fn format_fps(value: Option<f64>) -> String {
     value
-        .map(|value| match decimals {
-            0 => format!("{:>3}", value.round().clamp(0.0, 999.0) as u16),
-            _ => format!("{value:>4.1}"),
-        })
-        .unwrap_or_else(|| fallback.to_string())
+        .map(|value| format!("{:>3}", value.round().clamp(0.0, 999.0) as u16))
+        .unwrap_or_else(|| "---".to_string())
+}
+
+fn format_ms(value: Option<f64>) -> String {
+    value
+        .map(|value| format!("{:>4.1}", value.clamp(0.0, 999.9)))
+        .unwrap_or_else(|| "--.-".to_string())
+}
+
+fn shorten_overlay_status(value: &str, max_chars: usize) -> String {
+    let status = value
+        .strip_prefix("RTSS ")
+        .unwrap_or(value)
+        .replace("waiting fresh frames for ", "waiting frames ")
+        .replace("waiting for hooked game frames", "waiting hooked frames")
+        .replace("waiting for ", "waiting ");
+    shorten(&status, max_chars)
 }
 
 fn shorten_game_name(value: &str) -> String {
-    shorten(value, 30)
+    shorten(value, 28)
 }
 
 fn shorten_process_name(value: &str) -> String {
-    shorten(value, 28)
+    shorten(value, 24)
 }
 
 fn shorten(value: &str, max_chars: usize) -> String {
@@ -539,7 +604,12 @@ mod tests {
             average_fps: Some(58.7),
             low_1_fps: Some(44.0),
             frame_time_ms: Some(16.4),
+            frame_samples: 42,
+            frame_status: "RTSS tracking Cyberpunk2077.exe".to_string(),
             performance_alert: None,
+            profile_name: "balanced".to_string(),
+            overdrive: true,
+            session_elapsed: Some(Duration::from_secs(125)),
             cpu_usage: 22.0,
             ram_usage_pct: 78,
             gpu_usage_pct: Some(91),
@@ -547,8 +617,28 @@ mod tests {
             waste_mb: 8840.0,
         });
 
+        assert!(text.contains("CPM LIVE"));
         assert!(text.contains("FPS  61"));
+        assert!(text.contains("AVG  59"));
+        assert!(text.contains("1%L  44"));
+        assert!(text.contains("FT 16.4ms"));
+        assert!(text.contains("00:02:05  ODRV balanced"));
         assert!(text.contains("Cyberpunk 2077"));
+    }
+
+    #[test]
+    fn overlay_text_should_show_sync_state_without_empty_metric_labels() {
+        let mut snapshot = OverlaySnapshot::armed(OverlayBackend::Rtss);
+        snapshot.enabled = true;
+        snapshot.game_name = Some("Cyberpunk 2077".to_string());
+        snapshot.frame_status = "RTSS waiting fresh frames for Cyberpunk2077.exe".to_string();
+
+        let text = format_overlay_text(&snapshot);
+
+        assert!(text.contains("CPM SYNC"));
+        assert!(text.contains("FPS SYNC"));
+        assert!(text.contains("waiting frames Cyberpunk2077"));
+        assert!(!text.contains("AVG ---"));
     }
 
     #[test]
@@ -560,6 +650,36 @@ mod tests {
         let text = format_overlay_text(&snapshot);
 
         assert!(text.contains("SAFE Overdrive FPS collapse"));
+    }
+
+    #[test]
+    fn overlay_text_should_stay_inside_legacy_rtss_text_slot() {
+        let text = format_overlay_text(&OverlaySnapshot {
+            armed: true,
+            enabled: true,
+            backend: OverlayBackend::Rtss,
+            game_name: Some("Cyberpunk 2077 Ultimate Phantom Liberty Edition".to_string()),
+            process_name: Some("Cyberpunk2077VeryLongProcessName.exe".to_string()),
+            fps: Some(61.2),
+            average_fps: Some(58.7),
+            low_1_fps: Some(44.0),
+            frame_time_ms: Some(16.4),
+            frame_samples: 600,
+            frame_status: "RTSS tracking Cyberpunk2077VeryLongProcessName.exe".to_string(),
+            performance_alert: Some(
+                "Overdrive FPS collapse; press 2 to restore immediately".to_string(),
+            ),
+            profile_name: "aggressive".to_string(),
+            overdrive: true,
+            session_elapsed: Some(Duration::from_secs(3723)),
+            cpu_usage: 100.0,
+            ram_usage_pct: 99,
+            gpu_usage_pct: Some(100),
+            gpu_temp_c: Some(88.0),
+            waste_mb: 12_345.0,
+        });
+
+        assert!(text.len() < 255, "{text}");
     }
 
     #[test]
