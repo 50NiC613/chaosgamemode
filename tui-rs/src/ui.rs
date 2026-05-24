@@ -36,6 +36,7 @@ pub(crate) fn render_monitor(frame: &mut Frame, app: &App) {
     match app.tab {
         Tab::Dashboard => dashboard::render_dashboard(frame, app, layout[2]),
         Tab::Steam => steam_panel::render_steam(frame, app, layout[2]),
+        Tab::Frames => pages::render_frames(frame, app, layout[2]),
         Tab::Processes => pages::render_processes(frame, app, layout[2]),
         Tab::Boost => pages::render_boost(frame, app, layout[2]),
         Tab::System => pages::render_system(frame, app, layout[2]),
@@ -291,6 +292,14 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(format!(" {} ", lang.probe()), Style::new().fg(theme.muted)),
                 keycap(theme, "M"),
                 Span::styled(format!(" {} ", lang.theme()), Style::new().fg(theme.muted)),
+            ]);
+        }
+        Tab::Frames => {
+            spans.extend([
+                keycap(theme, "R"),
+                Span::styled(format!(" {} ", lang.probe()), Style::new().fg(theme.muted)),
+                keycap(theme, "E"),
+                Span::styled(format!(" {} ", lang.end()), Style::new().fg(theme.muted)),
             ]);
         }
         _ => {

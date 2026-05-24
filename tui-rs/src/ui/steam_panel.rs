@@ -75,6 +75,7 @@ fn render_steam_compact(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_steam_library(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let visible_rows = area.height.saturating_sub(2).max(1) as usize;
     let start = app
         .steam
@@ -85,9 +86,9 @@ fn render_steam_library(frame: &mut Frame, app: &App, area: Rect) {
     let items: Vec<ListItem> = if app.steam.games.is_empty() {
         vec![ListItem::new(Line::from(vec![
             Span::styled("  \u{f11b} ", Style::new().fg(theme.blue).bold()),
-            Span::styled("No hay juegos detectados. ", Style::new().fg(theme.muted)),
+            Span::styled(lang.steam_no_games_detected(), Style::new().fg(theme.muted)),
             Span::styled("\u{f002}", Style::new().fg(theme.cyber_yellow).bold()),
-            Span::styled(" scan library", Style::new().fg(theme.muted)),
+            Span::styled(lang.scan_library_hint(), Style::new().fg(theme.muted)),
         ]))]
     } else {
         app.steam.games[start..end]
@@ -112,9 +113,9 @@ fn render_steam_library(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     let title = if app.steam.scanning {
-        "STEAM / SCANNING"
+        lang.panel_steam_scanning()
     } else {
-        "STEAM LIBRARY"
+        lang.panel_steam_library()
     };
     frame.render_widget(
         List::new(items).block(accent_block(theme, title, theme.cyber_yellow)),
@@ -124,10 +125,11 @@ fn render_steam_library(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_steam_selection(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let lines = if let Some(game) = app.steam.selected_game() {
         vec![
             Line::from(vec![
-                metric_label(theme, "GAME"),
+                metric_label(theme, lang.game_label()),
                 metric_value(truncate(&game.name, 34), theme.cyber_yellow),
             ]),
             Line::from(vec![
@@ -135,14 +137,14 @@ fn render_steam_selection(frame: &mut Frame, app: &App, area: Rect) {
                 Span::styled(game.app_id.as_str(), Style::new().fg(theme.neon_cyan)),
             ]),
             Line::from(vec![
-                metric_label(theme, "INSTALL"),
+                metric_label(theme, lang.install_path_label()),
                 Span::styled(
                     truncate(&game.install_dir.display().to_string(), 38),
                     Style::new().fg(theme.foreground),
                 ),
             ]),
             Line::from(vec![
-                metric_label(theme, "LIBRARY"),
+                metric_label(theme, lang.library_label()),
                 Span::styled(
                     truncate(&game.library_dir.display().to_string(), 38),
                     Style::new().fg(theme.muted),
@@ -152,33 +154,51 @@ fn render_steam_selection(frame: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![
                 keycap(theme, "ENTER"),
                 Span::styled(
-                    " Preview + OD launch",
+                    lang.preview_od_launch(),
                     Style::new().fg(theme.neon_cyan).bold(),
                 ),
             ]),
             Line::from(vec![
                 keycap(theme, "L"),
-                Span::styled(" Launch normally", Style::new().fg(theme.neon_cyan).bold()),
+                Span::styled(
+                    lang.launch_normally(),
+                    Style::new().fg(theme.neon_cyan).bold(),
+                ),
             ]),
             Line::from(vec![
                 keycap(theme, "I"),
-                Span::styled(" Install  ", Style::new().fg(theme.acid_green).bold()),
+                Span::styled(
+                    format!(" {}  ", capitalize_short(lang.install())),
+                    Style::new().fg(theme.acid_green).bold(),
+                ),
                 keycap(theme, "V"),
-                Span::styled(" Validate  ", Style::new().fg(theme.cyber_yellow).bold()),
+                Span::styled(
+                    format!(" {}  ", capitalize_short(lang.validate())),
+                    Style::new().fg(theme.cyber_yellow).bold(),
+                ),
                 keycap(theme, "P"),
-                Span::styled(" Props", Style::new().fg(theme.neon_cyan).bold()),
+                Span::styled(
+                    format!(" {}", capitalize_short(lang.properties())),
+                    Style::new().fg(theme.neon_cyan).bold(),
+                ),
             ]),
         ]
     } else {
         vec![
             Line::from(vec![
-                Span::styled("  STATUS ", Style::new().fg(theme.muted)),
-                Span::styled(app.steam.status.as_str(), Style::new().fg(theme.hot_red)),
+                Span::styled(
+                    format!("  {} ", lang.label_status()),
+                    Style::new().fg(theme.muted),
+                ),
+                Span::styled(
+                    localized_steam_status(&app.steam.status, lang),
+                    Style::new().fg(theme.hot_red),
+                ),
             ]),
             Line::from(vec![
                 keycap(theme, "S"),
                 Span::styled(
-                    " Scan Steam library",
+                    lang.scan_steam_library(),
                     Style::new().fg(theme.neon_cyan).bold(),
                 ),
             ]),
@@ -187,7 +207,11 @@ fn render_steam_selection(frame: &mut Frame, app: &App, area: Rect) {
 
     frame.render_widget(
         Paragraph::new(Text::from(lines))
-            .block(accent_block(theme, "SELECTED GAME", theme.neon_cyan))
+            .block(accent_block(
+                theme,
+                lang.panel_selected_game(),
+                theme.neon_cyan,
+            ))
             .wrap(Wrap { trim: true }),
         area,
     );
@@ -195,18 +219,19 @@ fn render_steam_selection(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_session_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let mut lines = Vec::new();
 
     if let Some(session) = &app.session.active {
         lines.push(Line::from(vec![
-            metric_label(theme, "ACTIVE"),
+            metric_label(theme, lang.label_active()),
             Span::styled(
                 truncate(&session.name, 30),
                 Style::new().fg(theme.acid_green).bold(),
             ),
         ]));
         lines.push(Line::from(vec![
-            metric_label(theme, "TIME"),
+            metric_label(theme, lang.label_time()),
             Span::styled(
                 format_duration(session.started_at.elapsed()),
                 Style::new().fg(theme.cyber_yellow).bold(),
@@ -217,67 +242,71 @@ fn render_session_panel(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled(session.app_id.as_str(), Style::new().fg(theme.neon_cyan)),
         ]));
         lines.push(Line::from(vec![
-            metric_label(theme, "MODE"),
+            metric_label(theme, lang.label_mode()),
             Span::styled(
                 if session.overdrive {
-                    "overdrive"
+                    lang.mode_overdrive()
                 } else {
-                    "normal"
+                    lang.mode_normal()
                 },
                 Style::new().fg(theme.orange),
             ),
         ]));
         lines.push(Line::from(vec![
-            metric_label(theme, "SOURCE"),
-            Span::styled(session.source.as_str(), Style::new().fg(theme.neon_cyan)),
+            metric_label(theme, lang.label_source()),
+            Span::styled(
+                localized_session_source(session.source.as_str(), lang),
+                Style::new().fg(theme.neon_cyan),
+            ),
         ]));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             keycap(theme, "E"),
-            Span::styled(" End Session", Style::new().fg(theme.neon_cyan).bold()),
+            Span::styled(lang.end_session(), Style::new().fg(theme.neon_cyan).bold()),
         ]));
     } else {
         lines.push(Line::from(vec![
-            metric_label(theme, "ACTIVE"),
-            Span::styled("none", Style::new().fg(theme.muted)),
+            metric_label(theme, lang.label_active()),
+            Span::styled(lang.none(), Style::new().fg(theme.muted)),
         ]));
         if let Some(last_completed) = &app.session.last_completed {
             lines.push(Line::from(vec![
-                metric_label(theme, "LAST"),
+                metric_label(theme, lang.label_last()),
                 Span::styled(
                     truncate(last_completed, 36),
                     Style::new().fg(theme.foreground),
                 ),
             ]));
         } else {
-            lines.push(Line::from("  Launch a game to start a session timer"));
+            lines.push(Line::from(lang.launch_game_timer_hint()));
         }
     }
 
     frame.render_widget(
-        Paragraph::new(Text::from(lines)).block(accent_block(theme, "SESSION", theme.orange)),
+        Paragraph::new(Text::from(lines)).block(accent_block(theme, lang.session(), theme.orange)),
         area,
     );
 }
 
 fn render_steam_tools_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let lines = vec![
         Line::from(vec![
-            metric_label(theme, "LIBRARY"),
+            metric_label(theme, lang.library_label()),
             Span::styled(
                 if app.steam.scanning {
-                    "scanning".to_string()
+                    lang.scanning().to_string()
                 } else {
-                    format!("{} games", app.steam.games.len())
+                    lang.games_count(app.steam.games.len())
                 },
                 Style::new().fg(theme.cyber_yellow).bold(),
             ),
         ]),
         Line::from(vec![
-            metric_label(theme, "STATUS"),
+            metric_label(theme, lang.label_status()),
             Span::styled(
-                truncate(&app.steam.status, 34),
+                truncate(&localized_steam_status(&app.steam.status, lang), 34),
                 Style::new().fg(if app.steam.games.is_empty() {
                     theme.hot_red
                 } else {
@@ -289,9 +318,9 @@ fn render_steam_tools_panel(frame: &mut Frame, app: &App, area: Rect) {
             metric_label(theme, "STEAM"),
             Span::styled(
                 if app.state.steam_on {
-                    "running"
+                    lang.running()
                 } else {
-                    "closed"
+                    lang.closed()
                 },
                 Style::new().fg(status_color(theme, app.state.steam_on)),
             ),
@@ -306,29 +335,44 @@ fn render_steam_tools_panel(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(""),
         Line::from(vec![
             keycap(theme, "S"),
-            Span::styled(" Scan libraries  ", Style::new().fg(theme.neon_cyan).bold()),
+            Span::styled(
+                lang.scan_libraries(),
+                Style::new().fg(theme.neon_cyan).bold(),
+            ),
             keycap(theme, "D"),
-            Span::styled(" Downloads", Style::new().fg(theme.cyber_yellow).bold()),
+            Span::styled(
+                format!(" {}", capitalize_short(lang.downloads())),
+                Style::new().fg(theme.cyber_yellow).bold(),
+            ),
         ]),
         Line::from(vec![
             keycap(theme, "I"),
             Span::styled(
-                " Install selected  ",
+                lang.install_selected(),
                 Style::new().fg(theme.acid_green).bold(),
             ),
             keycap(theme, "V"),
-            Span::styled(" Validate", Style::new().fg(theme.cyber_yellow).bold()),
+            Span::styled(
+                format!(" {}", capitalize_short(lang.validate())),
+                Style::new().fg(theme.cyber_yellow).bold(),
+            ),
         ]),
         Line::from(vec![
             keycap(theme, "P"),
-            Span::styled(" Properties  ", Style::new().fg(theme.neon_cyan).bold()),
+            Span::styled(
+                lang.properties_action(),
+                Style::new().fg(theme.neon_cyan).bold(),
+            ),
             keycap(theme, "U"),
-            Span::styled(" Uninstall", Style::new().fg(theme.hot_red).bold()),
+            Span::styled(
+                lang.uninstall_action(),
+                Style::new().fg(theme.hot_red).bold(),
+            ),
         ]),
         Line::from(vec![
             keycap(theme, "E"),
             Span::styled(
-                " End current timer",
+                lang.end_current_timer(),
                 Style::new().fg(theme.neon_cyan).bold(),
             ),
         ]),
@@ -336,7 +380,11 @@ fn render_steam_tools_panel(frame: &mut Frame, app: &App, area: Rect) {
 
     frame.render_widget(
         Paragraph::new(Text::from(lines))
-            .block(accent_block(theme, "STEAM TOOLS", theme.neon_magenta))
+            .block(accent_block(
+                theme,
+                lang.panel_steam_tools(),
+                theme.neon_magenta,
+            ))
             .wrap(Wrap { trim: true }),
         area,
     );
@@ -344,11 +392,12 @@ fn render_steam_tools_panel(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_steam_runtime_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let running = app.steam.detect_running_game_process(&app.state);
     let lines = if let Some(running) = running {
         vec![
             Line::from(vec![
-                metric_label(theme, "RUNNING"),
+                metric_label(theme, lang.label_running()),
                 metric_value(truncate(&running.process_name, 28), theme.acid_green),
             ]),
             Line::from(vec![
@@ -363,9 +412,9 @@ fn render_steam_runtime_panel(frame: &mut Frame, app: &App, area: Rect) {
                 ),
             ]),
             Line::from(vec![
-                metric_label(theme, "FRAMES"),
+                metric_label(theme, lang.label_frames()),
                 metric_value(
-                    truncate(&app.frame_metrics.status, 32),
+                    truncate(&localized_frame_status(&app.frame_metrics.status, lang), 32),
                     if app.frame_metrics.fps.is_some() {
                         theme.acid_green
                     } else {
@@ -377,8 +426,8 @@ fn render_steam_runtime_panel(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         vec![
             Line::from(vec![
-                metric_label(theme, "RUNNING"),
-                Span::styled("none detected", Style::new().fg(theme.muted)),
+                metric_label(theme, lang.label_running()),
+                Span::styled(lang.none_detected(), Style::new().fg(theme.muted)),
             ]),
             Line::from(vec![
                 metric_label(theme, "MONITOR"),
@@ -388,9 +437,9 @@ fn render_steam_runtime_panel(frame: &mut Frame, app: &App, area: Rect) {
                 ),
             ]),
             Line::from(vec![
-                metric_label(theme, "FRAMES"),
+                metric_label(theme, lang.label_frames()),
                 Span::styled(
-                    truncate(&app.frame_metrics.status, 34),
+                    truncate(&localized_frame_status(&app.frame_metrics.status, lang), 34),
                     Style::new().fg(theme.muted),
                 ),
             ]),
@@ -399,7 +448,7 @@ fn render_steam_runtime_panel(frame: &mut Frame, app: &App, area: Rect) {
 
     frame.render_widget(
         Paragraph::new(Text::from(lines))
-            .block(accent_block(theme, "RUNTIME", theme.acid_green))
+            .block(accent_block(theme, lang.panel_runtime(), theme.acid_green))
             .wrap(Wrap { trim: true }),
         area,
     );
@@ -407,6 +456,7 @@ fn render_steam_runtime_panel(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_steam_library_summary(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let selected = app
         .steam
         .selected
@@ -417,38 +467,38 @@ fn render_steam_library_summary(frame: &mut Frame, app: &App, area: Rect) {
         .steam
         .selected_game()
         .map(|game| game.library_dir.display().to_string())
-        .unwrap_or_else(|| "none".to_string());
+        .unwrap_or_else(|| lang.none().to_string());
     let selected_install = app
         .steam
         .selected_game()
         .map(|game| game.install_dir.display().to_string())
-        .unwrap_or_else(|| "none".to_string());
+        .unwrap_or_else(|| lang.none().to_string());
 
     let lines = vec![
         Line::from(vec![
-            metric_label(theme, "GAMES"),
+            metric_label(theme, lang.label_games()),
             metric_value(app.steam.games.len().to_string(), theme.cyber_yellow),
         ]),
         Line::from(vec![
-            metric_label(theme, "LIBRARIES"),
+            metric_label(theme, lang.label_libraries()),
             metric_value(library_count.to_string(), theme.acid_green),
         ]),
         Line::from(vec![
-            metric_label(theme, "SELECTED"),
+            metric_label(theme, lang.label_selected()),
             metric_value(
                 format!("{selected}/{}", app.steam.games.len()),
                 theme.neon_cyan,
             ),
         ]),
         Line::from(vec![
-            metric_label(theme, "LIBRARY"),
+            metric_label(theme, lang.library_label()),
             Span::styled(
                 truncate(&selected_library, 36),
                 Style::new().fg(theme.muted),
             ),
         ]),
         Line::from(vec![
-            metric_label(theme, "INSTALL"),
+            metric_label(theme, lang.install_path_label()),
             Span::styled(
                 truncate(&selected_install, 36),
                 Style::new().fg(theme.foreground),
@@ -457,7 +507,7 @@ fn render_steam_library_summary(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(""),
         Line::from(vec![
             keycap(theme, "UP/DN"),
-            Span::styled(" browse  ", Style::new().fg(theme.neon_cyan).bold()),
+            Span::styled(lang.browse(), Style::new().fg(theme.neon_cyan).bold()),
             keycap(theme, "ENTER"),
             Span::styled(" OD", Style::new().fg(theme.orange).bold()),
         ]),
@@ -465,10 +515,18 @@ fn render_steam_library_summary(frame: &mut Frame, app: &App, area: Rect) {
 
     frame.render_widget(
         Paragraph::new(Text::from(lines))
-            .block(accent_block(theme, "LIBRARY INDEX", theme.blue))
+            .block(accent_block(theme, lang.panel_library_index(), theme.blue))
             .wrap(Wrap { trim: true }),
         area,
     );
+}
+
+fn capitalize_short(value: &'static str) -> String {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+    format!("{}{}", first.to_uppercase(), chars.collect::<String>())
 }
 
 fn steam_library_count(app: &App) -> usize {

@@ -74,13 +74,17 @@ fn render_metric_stack(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_cpu_gauge(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let pct = percent_from_f32(app.state.cpu_usage);
     let color = metric_color(theme, pct);
     let lines = vec![
         Line::from(vec![
-            metric_label(theme, "LOAD"),
+            metric_label(theme, lang.label_load()),
             metric_value(format!("{pct:>3}%"), color),
-            Span::styled("  CORES ", Style::new().fg(theme.muted)),
+            Span::styled(
+                format!("  {} ", lang.label_cores()),
+                Style::new().fg(theme.muted),
+            ),
             metric_value(app.state.cpu_cores.to_string(), theme.blue),
         ]),
         bar_line(theme, pct, metric_bar_width(area), color),
@@ -93,11 +97,12 @@ fn render_cpu_gauge(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_ram_gauge(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let pct = app.state.ram_used_pct();
     let color = metric_color(theme, pct);
     let lines = vec![
         Line::from(vec![
-            metric_label(theme, "USED"),
+            metric_label(theme, lang.label_used()),
             metric_value(
                 format!(
                     "{:.1}/{:.1} GB",
@@ -105,7 +110,10 @@ fn render_ram_gauge(frame: &mut Frame, app: &App, area: Rect) {
                 ),
                 theme.cyber_yellow,
             ),
-            Span::styled("  FREE ", Style::new().fg(theme.muted)),
+            Span::styled(
+                format!("  {} ", lang.label_free()),
+                Style::new().fg(theme.muted),
+            ),
             metric_value(format!("{}%", app.state.ram_free_pct()), theme.acid_green),
         ]),
         bar_line(theme, pct, metric_bar_width(area), color),
@@ -118,6 +126,7 @@ fn render_ram_gauge(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_gpu_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let hardware = &app.state.hardware;
     let pct = hardware.gpu_load_pct.unwrap_or(0);
     let color = if hardware.gpu_load_pct.is_some() {
@@ -134,13 +143,13 @@ fn render_gpu_panel(frame: &mut Frame, app: &App, area: Rect) {
 
     let lines = vec![
         Line::from(vec![
-            metric_label(theme, "LOAD"),
+            metric_label(theme, lang.label_load()),
             metric_value(format_optional_pct(hardware.gpu_load_pct), color),
             Span::styled("  VRAM ", Style::new().fg(theme.muted)),
             metric_value(format_vram(hardware), vram_color),
         ]),
         Line::from(vec![
-            metric_label(theme, "TEMP"),
+            metric_label(theme, lang.label_temp()),
             metric_value(
                 format_temp(hardware.gpu_temp_c),
                 temp_color(theme, hardware.gpu_temp_c),
@@ -167,52 +176,59 @@ fn render_gpu_panel(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_status_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let state = &app.state;
     let lines = vec![
         status_line(
             theme,
-            "POWER",
-            &state.power_plan,
+            lang.label_power(),
+            &display_power_plan(&state.power_plan, lang),
             state.power_plan == "Alto Rendimiento",
         ),
         status_line(
             theme,
-            "DESKTOP",
+            lang.label_desktop(),
             if state.explorer_on {
-                "explorer active"
+                lang.explorer_active()
             } else {
-                "minimal shell"
+                lang.minimal_shell()
             },
             !state.explorer_on,
         ),
         status_line(
             theme,
             "STEAM",
-            if state.steam_on { "online" } else { "offline" },
+            if state.steam_on {
+                lang.running()
+            } else {
+                lang.closed()
+            },
             state.steam_on,
         ),
         Line::from(vec![
-            metric_label(theme, "SERVICES"),
+            metric_label(theme, lang.label_services()),
             metric_value(
-                format!(
-                    "{}/{} running",
+                lang.services_running(
                     state.services_running,
-                    app.config.active_profile().services.len()
+                    app.config.active_profile().services.len(),
                 ),
                 theme.cyber_yellow,
             ),
         ]),
         Line::from(vec![
-            metric_label(theme, "BLOAT"),
+            metric_label(theme, lang.label_bloat()),
             metric_value(
                 format!("{:.0} MB", state.total_waste_mb),
                 metric_color(theme, percent(state.total_waste_mb, 4_000.0)),
             ),
         ]),
         Line::from(vec![
-            metric_label(theme, "SENSORS"),
+            metric_label(theme, lang.label_sensors()),
             metric_value(
-                crate::metrics::truncate(&state.hardware.status, 28),
+                crate::metrics::truncate(
+                    &localized_hardware_status(&state.hardware.status, lang),
+                    28,
+                ),
                 if state.hardware.gpu_load_pct.is_some() {
                     theme.neon_cyan
                 } else {
@@ -221,9 +237,9 @@ fn render_status_panel(frame: &mut Frame, app: &App, area: Rect) {
             ),
         ]),
         Line::from(vec![
-            metric_label(theme, "FRAMES"),
+            metric_label(theme, lang.label_frames()),
             metric_value(
-                truncate(&app.frame_metrics.status, 28),
+                truncate(&localized_frame_status(&app.frame_metrics.status, lang), 28),
                 if app.frame_metrics.fps.is_some() {
                     theme.acid_green
                 } else {
@@ -233,18 +249,19 @@ fn render_status_panel(frame: &mut Frame, app: &App, area: Rect) {
         ]),
     ];
     let panel = Paragraph::new(Text::from(lines))
-        .block(accent_block(theme, "SYSTEM", theme.cyber_yellow))
+        .block(accent_block(theme, lang.panel_system(), theme.cyber_yellow))
         .wrap(Wrap { trim: true });
     frame.render_widget(panel, area);
 }
 
 fn render_readiness_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let score = readiness_score(&app.state);
     let status = if score >= 80 {
-        "SYSTEM READY"
+        lang.dashboard_ready_status()
     } else {
-        "NEEDS CLEANUP"
+        lang.dashboard_cleanup_status()
     };
     let color = if score >= 80 {
         theme.acid_green
@@ -265,17 +282,18 @@ fn render_readiness_panel(frame: &mut Frame, app: &App, area: Rect) {
         Line::from(""),
         Line::from(vec![
             keycap(theme, "SPACE"),
-            Span::styled(" preview overdrive", Style::new().fg(theme.muted)),
+            Span::styled(lang.preview_overdrive_hint(), Style::new().fg(theme.muted)),
         ]),
     ];
     let panel = Paragraph::new(Text::from(lines))
-        .block(accent_block(theme, "READINESS", color))
+        .block(accent_block(theme, lang.panel_readiness(), color))
         .alignment(Alignment::Left);
     frame.render_widget(panel, area);
 }
 
 fn render_history_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let fps_history = scaled_history(&app.fps_history);
     let gpu_history = scaled_history(&app.gpu_history);
     let ram_history = scaled_history(&app.ram_history);
@@ -297,7 +315,11 @@ fn render_history_panel(frame: &mut Frame, app: &App, area: Rect) {
 
     frame.render_widget(
         Sparkline::default()
-            .block(accent_block(theme, "CPU TRACE", theme.blue))
+            .block(accent_block(
+                theme,
+                format!("CPU {}", lang.trace_title()),
+                theme.blue,
+            ))
             .data(app.cpu_history.iter().copied())
             .max(cpu_max)
             .style(Style::new().fg(theme.blue).bg(theme.panel)),
@@ -307,7 +329,12 @@ fn render_history_panel(frame: &mut Frame, app: &App, area: Rect) {
         Sparkline::default()
             .block(accent_block(
                 theme,
-                format!("FPS TRACE / {}-{}", fps_history.min, fps_history.max),
+                format!(
+                    "FPS {} / {}-{}",
+                    lang.trace_title(),
+                    fps_history.min,
+                    fps_history.max
+                ),
                 theme.cyber_yellow,
             ))
             .data(fps_history.values.iter().copied())
@@ -319,7 +346,12 @@ fn render_history_panel(frame: &mut Frame, app: &App, area: Rect) {
         Sparkline::default()
             .block(accent_block(
                 theme,
-                format!("GPU TRACE / {}-{}%", gpu_history.min, gpu_history.max),
+                format!(
+                    "GPU {} / {}-{}%",
+                    lang.trace_title(),
+                    gpu_history.min,
+                    gpu_history.max
+                ),
                 theme.orange,
             ))
             .data(gpu_history.values.iter().copied())
@@ -331,7 +363,12 @@ fn render_history_panel(frame: &mut Frame, app: &App, area: Rect) {
         Sparkline::default()
             .block(accent_block(
                 theme,
-                format!("RAM TRACE / {}-{}%", ram_history.min, ram_history.max),
+                format!(
+                    "RAM {} / {}-{}%",
+                    lang.trace_title(),
+                    ram_history.min,
+                    ram_history.max
+                ),
                 theme.neon_magenta,
             ))
             .data(ram_history.values.iter().copied())
@@ -344,8 +381,11 @@ fn render_history_panel(frame: &mut Frame, app: &App, area: Rect) {
             .block(accent_block(
                 theme,
                 format!(
-                    "BLOAT TRACE / {}-{}MB",
-                    waste_history.min, waste_history.max
+                    "{} {} / {}-{}MB",
+                    lang.label_bloat(),
+                    lang.trace_title(),
+                    waste_history.min,
+                    waste_history.max
                 ),
                 theme.hot_red,
             ))
@@ -392,6 +432,7 @@ fn temp_color(theme: &crate::theme::Theme, value: Option<f32>) -> ratatui::style
 
 fn render_process_heat_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
+    let lang = app.config.ui.language;
     let mut lines = Vec::new();
     let sorted = sorted_processes(&app.state);
     let total = app.state.total_waste_mb.max(1.0);
@@ -401,15 +442,22 @@ fn render_process_heat_panel(frame: &mut Frame, app: &App, area: Rect) {
     if sorted.is_empty() {
         lines.push(Line::from(vec![
             Span::styled("  \u{f00c} ", Style::new().fg(theme.acid_green).bold()),
-            Span::styled("no residual targets  ", Style::new().fg(theme.muted)),
+            Span::styled(lang.no_residual_targets(), Style::new().fg(theme.muted)),
+            Span::styled("  ", Style::new().fg(theme.muted)),
             Span::styled("\u{f0e7}", Style::new().fg(theme.cyber_yellow).bold()),
-            Span::styled(" preview overdrive", Style::new().fg(theme.muted)),
+            Span::styled(lang.preview_overdrive_hint(), Style::new().fg(theme.muted)),
         ]));
     } else {
         // Table-like header with % column
         lines.push(Line::from(vec![
-            Span::styled("  NAME                    ", Style::new().fg(theme.muted)),
-            Span::styled("   MEMORY   #    %  HEAT", Style::new().fg(theme.muted)),
+            Span::styled(
+                format!("  {:<24}", lang.label_name()),
+                Style::new().fg(theme.muted),
+            ),
+            Span::styled(
+                format!("   {}   #    %  {}", lang.label_memory(), lang.label_heat()),
+                Style::new().fg(theme.muted),
+            ),
         ]));
         for (name, group) in sorted.iter().take(max_rows) {
             let pct_of_total = ((group.memory_mb / total) * 100.0).clamp(0.0, 100.0);
@@ -425,20 +473,29 @@ fn render_process_heat_panel(frame: &mut Frame, app: &App, area: Rect) {
         if sorted.len() > max_rows {
             lines.push(Line::from(vec![
                 Span::styled("  ... ", Style::new().fg(theme.muted)),
-                metric_value(
-                    format!("{} more entries  ", sorted.len() - max_rows),
-                    theme.muted,
-                ),
+                metric_value(lang.more_entries(sorted.len() - max_rows), theme.muted),
                 Span::styled("\u{f0e7}", Style::new().fg(theme.cyber_yellow).bold()),
-                Span::styled(" full preview", Style::new().fg(theme.muted)),
+                Span::styled(lang.full_preview_hint(), Style::new().fg(theme.muted)),
             ]));
         }
     }
 
     let panel = Paragraph::new(Text::from(lines))
-        .block(accent_block(theme, "PROCESS HEATMAP", theme.cyber_yellow))
+        .block(accent_block(
+            theme,
+            lang.panel_process_heatmap(),
+            theme.cyber_yellow,
+        ))
         .wrap(Wrap { trim: true });
     frame.render_widget(panel, area);
+}
+
+fn display_power_plan(plan: &str, language: crate::i18n::Language) -> String {
+    match plan {
+        "Alto Rendimiento" => language.high_performance_plan().to_string(),
+        "Balanceado" => language.balanced_plan().to_string(),
+        other => other.to_string(),
+    }
 }
 
 fn metric_bar_width(area: Rect) -> usize {

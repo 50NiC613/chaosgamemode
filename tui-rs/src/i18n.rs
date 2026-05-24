@@ -28,6 +28,7 @@ impl Language {
         match (self, tab) {
             (_, Tab::Dashboard) => "DASHBOARD",
             (_, Tab::Steam) => "STEAM",
+            (_, Tab::Frames) => "FRAMES",
             (Self::Spanish, Tab::Processes) => "PROCESOS",
             (Self::English, Tab::Processes) => "PROCESSES",
             (_, Tab::Boost) => "OVERDRIVE",
@@ -44,6 +45,7 @@ impl Language {
         match (self, tab) {
             (_, Tab::Dashboard) => "DASH",
             (_, Tab::Steam) => "STEAM",
+            (_, Tab::Frames) => "FPS",
             (Self::Spanish, Tab::Processes) => "PROC",
             (Self::English, Tab::Processes) => "PROC",
             (_, Tab::Boost) => "ODRV",
@@ -606,6 +608,13 @@ impl Language {
         }
     }
 
+    pub(crate) fn history_read_error(self, err: &std::io::Error) -> String {
+        match self {
+            Self::Spanish => format!("error de historial: {err}"),
+            Self::English => format!("history error: {err}"),
+        }
+    }
+
     pub(crate) fn saved_history(self, path: &std::path::Path) -> String {
         match self {
             Self::Spanish => format!("  Historial guardado: {}", path.display()),
@@ -645,6 +654,24 @@ impl Language {
         match self {
             Self::Spanish => "  No hay sesion activa.",
             Self::English => "  No active session.",
+        }
+    }
+
+    pub(crate) fn completed_session_label(
+        self,
+        name: &str,
+        duration: &str,
+        source: &str,
+    ) -> String {
+        let source = match (self, source) {
+            (Self::Spanish, "auto-detected") => "auto-detectado",
+            (_, "auto-detected") => "auto-detected",
+            (_, "manual") => "manual",
+            _ => source,
+        };
+        match self {
+            Self::Spanish => format!("{name} termino tras {duration} ({source})"),
+            Self::English => format!("{name} ended after {duration} ({source})"),
         }
     }
 
@@ -898,5 +925,1500 @@ impl Language {
             Self::Spanish => "apps cerradas no se reabren solas",
             Self::English => "closed apps are not reopened automatically",
         }
+    }
+
+    pub(crate) const fn label_load(self) -> &'static str {
+        match self {
+            Self::Spanish => "CARGA",
+            Self::English => "LOAD",
+        }
+    }
+
+    pub(crate) const fn label_cores(self) -> &'static str {
+        match self {
+            Self::Spanish => "NUCLEOS",
+            Self::English => "CORES",
+        }
+    }
+
+    pub(crate) const fn label_used(self) -> &'static str {
+        match self {
+            Self::Spanish => "USADO",
+            Self::English => "USED",
+        }
+    }
+
+    pub(crate) const fn label_free(self) -> &'static str {
+        match self {
+            Self::Spanish => "LIBRE",
+            Self::English => "FREE",
+        }
+    }
+
+    pub(crate) const fn label_temp(self) -> &'static str {
+        "TEMP"
+    }
+
+    pub(crate) const fn label_power(self) -> &'static str {
+        match self {
+            Self::Spanish => "ENERGIA",
+            Self::English => "POWER",
+        }
+    }
+
+    pub(crate) const fn label_desktop(self) -> &'static str {
+        match self {
+            Self::Spanish => "ESCRITORIO",
+            Self::English => "DESKTOP",
+        }
+    }
+
+    pub(crate) const fn label_services(self) -> &'static str {
+        match self {
+            Self::Spanish => "SERVICIOS",
+            Self::English => "SERVICES",
+        }
+    }
+
+    pub(crate) const fn label_bloat(self) -> &'static str {
+        match self {
+            Self::Spanish => "RESIDUO",
+            Self::English => "BLOAT",
+        }
+    }
+
+    pub(crate) const fn label_sensors(self) -> &'static str {
+        match self {
+            Self::Spanish => "SENSORES",
+            Self::English => "SENSORS",
+        }
+    }
+
+    pub(crate) const fn label_frames(self) -> &'static str {
+        match self {
+            Self::Spanish => "FRAMES",
+            Self::English => "FRAMES",
+        }
+    }
+
+    pub(crate) const fn label_name(self) -> &'static str {
+        match self {
+            Self::Spanish => "NOMBRE",
+            Self::English => "NAME",
+        }
+    }
+
+    pub(crate) const fn label_memory(self) -> &'static str {
+        match self {
+            Self::Spanish => "MEMORIA",
+            Self::English => "MEMORY",
+        }
+    }
+
+    pub(crate) const fn label_heat(self) -> &'static str {
+        match self {
+            Self::Spanish => "CALOR",
+            Self::English => "HEAT",
+        }
+    }
+
+    pub(crate) const fn label_pattern(self) -> &'static str {
+        match self {
+            Self::Spanish => "PATRON",
+            Self::English => "PATTERN",
+        }
+    }
+
+    pub(crate) const fn label_status(self) -> &'static str {
+        match self {
+            Self::Spanish => "ESTADO",
+            Self::English => "STATUS",
+        }
+    }
+
+    pub(crate) const fn label_view(self) -> &'static str {
+        match self {
+            Self::Spanish => "VISTA",
+            Self::English => "VIEW",
+        }
+    }
+
+    pub(crate) const fn label_config(self) -> &'static str {
+        match self {
+            Self::Spanish => "CONFIG",
+            Self::English => "CONFIG",
+        }
+    }
+
+    pub(crate) const fn label_targets(self) -> &'static str {
+        match self {
+            Self::Spanish => "OBJETIVOS",
+            Self::English => "TARGETS",
+        }
+    }
+
+    pub(crate) const fn label_keep(self) -> &'static str {
+        match self {
+            Self::Spanish => "PROTEGER",
+            Self::English => "KEEP",
+        }
+    }
+
+    pub(crate) const fn label_watch(self) -> &'static str {
+        match self {
+            Self::Spanish => "VIGILAR",
+            Self::English => "WATCH",
+        }
+    }
+
+    pub(crate) const fn label_selected(self) -> &'static str {
+        match self {
+            Self::Spanish => "SELECCION",
+            Self::English => "SELECTED",
+        }
+    }
+
+    pub(crate) const fn label_visible(self) -> &'static str {
+        match self {
+            Self::Spanish => "VISIBLES",
+            Self::English => "VISIBLE",
+        }
+    }
+
+    pub(crate) const fn label_total(self) -> &'static str {
+        "TOTAL"
+    }
+
+    pub(crate) const fn label_filter(self) -> &'static str {
+        match self {
+            Self::Spanish => "FILTRO",
+            Self::English => "FILTER",
+        }
+    }
+
+    pub(crate) const fn label_payload(self) -> &'static str {
+        "PAYLOAD"
+    }
+
+    pub(crate) const fn label_ready(self) -> &'static str {
+        match self {
+            Self::Spanish => "LISTO",
+            Self::English => "READY",
+        }
+    }
+
+    pub(crate) const fn label_power_plan(self) -> &'static str {
+        match self {
+            Self::Spanish => "PLAN",
+            Self::English => "POWER PLAN",
+        }
+    }
+
+    pub(crate) const fn label_shell(self) -> &'static str {
+        match self {
+            Self::Spanish => "SHELL",
+            Self::English => "SHELL",
+        }
+    }
+
+    pub(crate) const fn label_mode(self) -> &'static str {
+        match self {
+            Self::Spanish => "MODO",
+            Self::English => "MODE",
+        }
+    }
+
+    pub(crate) const fn label_protected(self) -> &'static str {
+        match self {
+            Self::Spanish => "PROTEGIDOS",
+            Self::English => "PROTECTED",
+        }
+    }
+
+    pub(crate) const fn label_explorer(self) -> &'static str {
+        "EXPLORER"
+    }
+
+    pub(crate) const fn label_removable(self) -> &'static str {
+        match self {
+            Self::Spanish => "REMOVIBLE",
+            Self::English => "REMOVABLE",
+        }
+    }
+
+    pub(crate) const fn label_groups(self) -> &'static str {
+        match self {
+            Self::Spanish => "GRUPOS",
+            Self::English => "GROUPS",
+        }
+    }
+
+    pub(crate) const fn label_restore(self) -> &'static str {
+        match self {
+            Self::Spanish => "RESTAURAR",
+            Self::English => "RESTORE",
+        }
+    }
+
+    pub(crate) const fn label_note(self) -> &'static str {
+        match self {
+            Self::Spanish => "NOTA",
+            Self::English => "NOTE",
+        }
+    }
+
+    pub(crate) const fn label_cpu_usage(self) -> &'static str {
+        match self {
+            Self::Spanish => "USO CPU",
+            Self::English => "CPU USAGE",
+        }
+    }
+
+    pub(crate) const fn label_ram_used(self) -> &'static str {
+        match self {
+            Self::Spanish => "RAM USADA",
+            Self::English => "RAM USED",
+        }
+    }
+
+    pub(crate) const fn label_ram_free(self) -> &'static str {
+        match self {
+            Self::Spanish => "RAM LIBRE",
+            Self::English => "RAM FREE",
+        }
+    }
+
+    pub(crate) const fn label_telemetry(self) -> &'static str {
+        match self {
+            Self::Spanish => "TELEMETRIA",
+            Self::English => "TELEMETRY",
+        }
+    }
+
+    pub(crate) const fn label_observed(self) -> &'static str {
+        match self {
+            Self::Spanish => "OBSERVADOS",
+            Self::English => "OBSERVED",
+        }
+    }
+
+    pub(crate) const fn label_uptime(self) -> &'static str {
+        match self {
+            Self::Spanish => "TIEMPO",
+            Self::English => "UPTIME",
+        }
+    }
+
+    pub(crate) const fn label_processes(self) -> &'static str {
+        match self {
+            Self::Spanish => "PROCESOS",
+            Self::English => "PROCESSES",
+        }
+    }
+
+    pub(crate) const fn label_steam_lib(self) -> &'static str {
+        match self {
+            Self::Spanish => "BIB STEAM",
+            Self::English => "STEAM LIB",
+        }
+    }
+
+    pub(crate) const fn label_history(self) -> &'static str {
+        match self {
+            Self::Spanish => "HISTORIAL",
+            Self::English => "HISTORY",
+        }
+    }
+
+    pub(crate) const fn label_theme_file(self) -> &'static str {
+        match self {
+            Self::Spanish => "ARCH TEMA",
+            Self::English => "THEME FILE",
+        }
+    }
+
+    pub(crate) const fn label_gpu_load(self) -> &'static str {
+        match self {
+            Self::Spanish => "CARGA GPU",
+            Self::English => "GPU LOAD",
+        }
+    }
+
+    pub(crate) const fn label_gpu_vram(self) -> &'static str {
+        "GPU VRAM"
+    }
+
+    pub(crate) const fn label_gpu_temp(self) -> &'static str {
+        match self {
+            Self::Spanish => "TEMP GPU",
+            Self::English => "GPU TEMP",
+        }
+    }
+
+    pub(crate) const fn label_cpu_temp(self) -> &'static str {
+        match self {
+            Self::Spanish => "TEMP CPU",
+            Self::English => "CPU TEMP",
+        }
+    }
+
+    pub(crate) const fn label_average(self) -> &'static str {
+        match self {
+            Self::Spanish => "PROM",
+            Self::English => "AVG",
+        }
+    }
+
+    pub(crate) const fn label_frame(self) -> &'static str {
+        "FRAME"
+    }
+
+    pub(crate) const fn label_samples(self) -> &'static str {
+        match self {
+            Self::Spanish => "MUESTRAS",
+            Self::English => "SAMPLES",
+        }
+    }
+
+    pub(crate) const fn label_theme(self) -> &'static str {
+        match self {
+            Self::Spanish => "TEMA",
+            Self::English => "THEME",
+        }
+    }
+
+    pub(crate) const fn label_language(self) -> &'static str {
+        match self {
+            Self::Spanish => "IDIOMA",
+            Self::English => "LANGUAGE",
+        }
+    }
+
+    pub(crate) const fn label_theme_live(self) -> &'static str {
+        match self {
+            Self::Spanish => "TEMA LIVE",
+            Self::English => "THEME LIVE",
+        }
+    }
+
+    pub(crate) const fn label_source(self) -> &'static str {
+        match self {
+            Self::Spanish => "ORIGEN",
+            Self::English => "SOURCE",
+        }
+    }
+
+    pub(crate) const fn label_resolved(self) -> &'static str {
+        match self {
+            Self::Spanish => "RESUELTO",
+            Self::English => "RESOLVED",
+        }
+    }
+
+    pub(crate) const fn label_provider(self) -> &'static str {
+        match self {
+            Self::Spanish => "PROVEEDOR",
+            Self::English => "PROVIDER",
+        }
+    }
+
+    pub(crate) const fn label_next(self) -> &'static str {
+        match self {
+            Self::Spanish => "SIGUIENTE",
+            Self::English => "NEXT",
+        }
+    }
+
+    pub(crate) const fn label_logged(self) -> &'static str {
+        match self {
+            Self::Spanish => "REGISTRA",
+            Self::English => "LOGGED",
+        }
+    }
+
+    pub(crate) const fn label_path(self) -> &'static str {
+        match self {
+            Self::Spanish => "RUTA",
+            Self::English => "PATH",
+        }
+    }
+
+    pub(crate) const fn label_buffer(self) -> &'static str {
+        "BUFFER"
+    }
+
+    pub(crate) const fn label_lines(self) -> &'static str {
+        match self {
+            Self::Spanish => "LINEAS",
+            Self::English => "LINES",
+        }
+    }
+
+    pub(crate) const fn label_warnings(self) -> &'static str {
+        match self {
+            Self::Spanish => "AVISOS",
+            Self::English => "WARNINGS",
+        }
+    }
+
+    pub(crate) const fn label_last(self) -> &'static str {
+        match self {
+            Self::Spanish => "ULTIMO",
+            Self::English => "LAST",
+        }
+    }
+
+    pub(crate) const fn label_active(self) -> &'static str {
+        match self {
+            Self::Spanish => "ACTIVO",
+            Self::English => "ACTIVE",
+        }
+    }
+
+    pub(crate) const fn label_time(self) -> &'static str {
+        match self {
+            Self::Spanish => "TIEMPO",
+            Self::English => "TIME",
+        }
+    }
+
+    pub(crate) const fn label_running(self) -> &'static str {
+        match self {
+            Self::Spanish => "EJECUTA",
+            Self::English => "RUNNING",
+        }
+    }
+
+    pub(crate) const fn label_games(self) -> &'static str {
+        match self {
+            Self::Spanish => "JUEGOS",
+            Self::English => "GAMES",
+        }
+    }
+
+    pub(crate) const fn label_libraries(self) -> &'static str {
+        match self {
+            Self::Spanish => "BIBLIOTECAS",
+            Self::English => "LIBRARIES",
+        }
+    }
+
+    pub(crate) const fn label_pmon(self) -> &'static str {
+        "PMON"
+    }
+
+    pub(crate) const fn label_target(self) -> &'static str {
+        match self {
+            Self::Spanish => "OBJETIVO",
+            Self::English => "TARGET",
+        }
+    }
+
+    pub(crate) const fn label_capture(self) -> &'static str {
+        match self {
+            Self::Spanish => "CAPTURA",
+            Self::English => "CAPTURE",
+        }
+    }
+
+    pub(crate) const fn label_latency(self) -> &'static str {
+        match self {
+            Self::Spanish => "LATENCIA",
+            Self::English => "LATENCY",
+        }
+    }
+
+    pub(crate) const fn label_monitor(self) -> &'static str {
+        "MONITOR"
+    }
+
+    pub(crate) const fn panel_frame_history(self) -> &'static str {
+        match self {
+            Self::Spanish => "HISTORIAL FPS",
+            Self::English => "FPS HISTORY",
+        }
+    }
+
+    pub(crate) const fn panel_frame_metrics(self) -> &'static str {
+        match self {
+            Self::Spanish => "METRICAS DE FRAMES",
+            Self::English => "FRAME METRICS",
+        }
+    }
+
+    pub(crate) const fn panel_presentmon(self) -> &'static str {
+        "PRESENTMON"
+    }
+
+    pub(crate) const fn dashboard_ready_status(self) -> &'static str {
+        match self {
+            Self::Spanish => "SISTEMA LISTO",
+            Self::English => "SYSTEM READY",
+        }
+    }
+
+    pub(crate) const fn dashboard_cleanup_status(self) -> &'static str {
+        match self {
+            Self::Spanish => "REQUIERE LIMPIEZA",
+            Self::English => "NEEDS CLEANUP",
+        }
+    }
+
+    pub(crate) const fn preview_overdrive_hint(self) -> &'static str {
+        match self {
+            Self::Spanish => " preview overdrive",
+            Self::English => " preview overdrive",
+        }
+    }
+
+    pub(crate) const fn full_preview_hint(self) -> &'static str {
+        match self {
+            Self::Spanish => " preview completo",
+            Self::English => " full preview",
+        }
+    }
+
+    pub(crate) const fn no_residual_targets(self) -> &'static str {
+        match self {
+            Self::Spanish => "sin objetivos residuales",
+            Self::English => "no residual targets",
+        }
+    }
+
+    pub(crate) const fn trace_title(self) -> &'static str {
+        "TRACE"
+    }
+
+    pub(crate) const fn panel_readiness(self) -> &'static str {
+        match self {
+            Self::Spanish => "PREPARACION",
+            Self::English => "READINESS",
+        }
+    }
+
+    pub(crate) const fn panel_system(self) -> &'static str {
+        match self {
+            Self::Spanish => "SISTEMA",
+            Self::English => "SYSTEM",
+        }
+    }
+
+    pub(crate) const fn panel_process_heatmap(self) -> &'static str {
+        match self {
+            Self::Spanish => "MAPA DE PROCESOS",
+            Self::English => "PROCESS HEATMAP",
+        }
+    }
+
+    pub(crate) const fn panel_processes(self) -> &'static str {
+        match self {
+            Self::Spanish => "PROCESOS",
+            Self::English => "PROCESSES",
+        }
+    }
+
+    pub(crate) const fn panel_hidden_bin(self) -> &'static str {
+        match self {
+            Self::Spanish => "OCULTOS",
+            Self::English => "HIDDEN BIN",
+        }
+    }
+
+    pub(crate) const fn panel_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "DETALLE",
+            Self::English => "DETAIL",
+        }
+    }
+
+    pub(crate) const fn panel_policy(self) -> &'static str {
+        match self {
+            Self::Spanish => "POLITICA",
+            Self::English => "POLICY",
+        }
+    }
+
+    pub(crate) const fn panel_process_map(self) -> &'static str {
+        match self {
+            Self::Spanish => "MAPA DE PROCESOS",
+            Self::English => "PROCESS MAP",
+        }
+    }
+
+    pub(crate) const fn top_memory_heading(self) -> &'static str {
+        match self {
+            Self::Spanish => " TOP MEMORIA",
+            Self::English => " TOP MEMORY",
+        }
+    }
+
+    pub(crate) const fn current_targets_heading(self) -> &'static str {
+        match self {
+            Self::Spanish => " OBJETIVOS ACTUALES",
+            Self::English => " CURRENT TARGETS",
+        }
+    }
+
+    pub(crate) const fn status_hidden(self) -> &'static str {
+        match self {
+            Self::Spanish => "OCULTO",
+            Self::English => "HIDDEN",
+        }
+    }
+
+    pub(crate) const fn status_keep(self) -> &'static str {
+        match self {
+            Self::Spanish => "KEEP",
+            Self::English => "KEEP",
+        }
+    }
+
+    pub(crate) const fn status_target(self) -> &'static str {
+        match self {
+            Self::Spanish => "TARGET",
+            Self::English => "TARGET",
+        }
+    }
+
+    pub(crate) const fn status_watch(self) -> &'static str {
+        match self {
+            Self::Spanish => "OBSERVA",
+            Self::English => "WATCH",
+        }
+    }
+
+    pub(crate) const fn no_process_filter_match(self) -> &'static str {
+        match self {
+            Self::Spanish => "No hay procesos que coincidan con el filtro",
+            Self::English => "No processes match the filter",
+        }
+    }
+
+    pub(crate) const fn no_hidden_processes(self) -> &'static str {
+        match self {
+            Self::Spanish => "No hay procesos ocultos detectados",
+            Self::English => "No hidden processes detected",
+        }
+    }
+
+    pub(crate) const fn no_actionable_processes(self) -> &'static str {
+        match self {
+            Self::Spanish => "No hay procesos accionables detectados",
+            Self::English => "No actionable processes detected",
+        }
+    }
+
+    pub(crate) const fn hidden_view_hint(self) -> &'static str {
+        match self {
+            Self::Spanish => " vista ocultos",
+            Self::English => " hidden view",
+        }
+    }
+
+    pub(crate) const fn unavailable(self) -> &'static str {
+        match self {
+            Self::Spanish => "no disponible",
+            Self::English => "unavailable",
+        }
+    }
+
+    pub(crate) const fn none(self) -> &'static str {
+        match self {
+            Self::Spanish => "ninguno",
+            Self::English => "none",
+        }
+    }
+
+    pub(crate) const fn no_process_selected(self) -> &'static str {
+        match self {
+            Self::Spanish => "  No hay proceso seleccionado",
+            Self::English => "  No process selected",
+        }
+    }
+
+    pub(crate) const fn view_hidden(self) -> &'static str {
+        match self {
+            Self::Spanish => "oculto",
+            Self::English => "hidden",
+        }
+    }
+
+    pub(crate) const fn view_actionable(self) -> &'static str {
+        match self {
+            Self::Spanish => "accionable",
+            Self::English => "actionable",
+        }
+    }
+
+    pub(crate) fn memory_instances(self, memory_mb: f64, count: usize) -> String {
+        match self {
+            Self::Spanish => format!("{memory_mb:.0} MB / {count} instancias"),
+            Self::English => format!("{memory_mb:.0} MB / {count} instances"),
+        }
+    }
+
+    pub(crate) fn groups_count(self, count: usize) -> String {
+        match self {
+            Self::Spanish => format!("{count} grupos"),
+            Self::English => format!("{count} groups"),
+        }
+    }
+
+    pub(crate) fn services_running(self, running: usize, total: usize) -> String {
+        match self {
+            Self::Spanish => format!("{running}/{total} activos"),
+            Self::English => format!("{running}/{total} running"),
+        }
+    }
+
+    pub(crate) fn active_groups(self, count: usize) -> String {
+        match self {
+            Self::Spanish => format!("{count} grupos activos"),
+            Self::English => format!("{count} active groups"),
+        }
+    }
+
+    pub(crate) fn removable_heat(self, memory_mb: f64) -> String {
+        match self {
+            Self::Spanish => format!("{memory_mb:.0} MB de carga removible"),
+            Self::English => format!("{memory_mb:.0} MB removable heat"),
+        }
+    }
+
+    pub(crate) fn configured_count(self, count: usize) -> String {
+        match self {
+            Self::Spanish => format!("{count} configurados"),
+            Self::English => format!("{count} configured"),
+        }
+    }
+
+    pub(crate) fn games_count(self, count: usize) -> String {
+        match self {
+            Self::Spanish => format!("{count} juegos"),
+            Self::English => format!("{count} games"),
+        }
+    }
+
+    pub(crate) fn lines_count(self, count: usize) -> String {
+        match self {
+            Self::Spanish => format!("{count} lineas"),
+            Self::English => format!("{count} lines"),
+        }
+    }
+
+    pub(crate) fn more_entries(self, count: usize) -> String {
+        match self {
+            Self::Spanish => format!("{count} entradas mas  "),
+            Self::English => format!("{count} more entries  "),
+        }
+    }
+
+    pub(crate) fn latest_lines(self, count: usize) -> String {
+        match self {
+            Self::Spanish => format!("ultimas {count} lineas"),
+            Self::English => format!("last {count} lines"),
+        }
+    }
+
+    pub(crate) const fn command_preview_overdrive(self) -> &'static str {
+        match self {
+            Self::Spanish => "Preview Overdrive",
+            Self::English => "Preview Overdrive",
+        }
+    }
+
+    pub(crate) const fn command_preview_overdrive_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "confirma antes de cambiar",
+            Self::English => "confirm before changes",
+        }
+    }
+
+    pub(crate) const fn command_restore_system(self) -> &'static str {
+        match self {
+            Self::Spanish => "Restaurar sistema",
+            Self::English => "Restore System",
+        }
+    }
+
+    pub(crate) const fn command_restore_system_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "shell, servicios y energia balanceada",
+            Self::English => "restart shell, services, balanced power",
+        }
+    }
+
+    pub(crate) const fn command_refresh_telemetry(self) -> &'static str {
+        match self {
+            Self::Spanish => "Refrescar telemetria",
+            Self::English => "Refresh Telemetry",
+        }
+    }
+
+    pub(crate) const fn command_refresh_telemetry_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "toma un snapshot nuevo",
+            Self::English => "pull a fresh system snapshot",
+        }
+    }
+
+    pub(crate) const fn command_switch_deck(self) -> &'static str {
+        match self {
+            Self::Spanish => "Cambiar vista",
+            Self::English => "Switch Deck",
+        }
+    }
+
+    pub(crate) const fn command_switch_deck_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "dashboard, steam, frames, procesos, overdrive, sistema, historial",
+            Self::English => "dashboard, steam, frames, processes, overdrive, system, history",
+        }
+    }
+
+    pub(crate) const fn command_cycle_theme(self) -> &'static str {
+        match self {
+            Self::Spanish => "Cambiar tema",
+            Self::English => "Cycle Theme",
+        }
+    }
+
+    pub(crate) const fn command_cycle_theme_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "cyberpunk, hacker, gruvbox, tokyo, mocha",
+            Self::English => "cyberpunk, hacker, gruvbox, tokyo, mocha",
+        }
+    }
+
+    pub(crate) const fn command_exit(self) -> &'static str {
+        match self {
+            Self::Spanish => "Salir",
+            Self::English => "Exit",
+        }
+    }
+
+    pub(crate) const fn command_exit_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "deja la terminal limpia",
+            Self::English => "leave terminal cleanly",
+        }
+    }
+
+    pub(crate) const fn command_probe_tools(self) -> &'static str {
+        match self {
+            Self::Spanish => "Detectar herramientas",
+            Self::English => "Probe Tools",
+        }
+    }
+
+    pub(crate) const fn command_probe_tools_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "refresca deteccion de PresentMon",
+            Self::English => "refresh PresentMon detection",
+        }
+    }
+
+    pub(crate) const fn command_reload_history(self) -> &'static str {
+        match self {
+            Self::Spanish => "Recargar historial",
+            Self::English => "Reload History",
+        }
+    }
+
+    pub(crate) const fn command_reload_history_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "lee history.log otra vez",
+            Self::English => "read history.log again",
+        }
+    }
+
+    pub(crate) const fn command_scroll(self) -> &'static str {
+        match self {
+            Self::Spanish => "Scroll",
+            Self::English => "Scroll",
+        }
+    }
+
+    pub(crate) const fn command_scroll_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "mueve una linea",
+            Self::English => "move one line",
+        }
+    }
+
+    pub(crate) const fn command_page(self) -> &'static str {
+        match self {
+            Self::Spanish => "Pagina",
+            Self::English => "Page",
+        }
+    }
+
+    pub(crate) const fn command_page_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "salta por bloque",
+            Self::English => "jump by block",
+        }
+    }
+
+    pub(crate) const fn command_top(self) -> &'static str {
+        match self {
+            Self::Spanish => "Inicio",
+            Self::English => "Top",
+        }
+    }
+
+    pub(crate) const fn command_top_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "primera linea visible",
+            Self::English => "first visible line",
+        }
+    }
+
+    pub(crate) const fn command_bottom(self) -> &'static str {
+        match self {
+            Self::Spanish => "Final",
+            Self::English => "Bottom",
+        }
+    }
+
+    pub(crate) const fn command_bottom_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "entradas recientes",
+            Self::English => "latest entries",
+        }
+    }
+
+    pub(crate) const fn command_theme_persists(self) -> &'static str {
+        match self {
+            Self::Spanish => "se guarda en theme.toml",
+            Self::English => "persists in theme.toml",
+        }
+    }
+
+    pub(crate) const fn panel_overdrive_console(self) -> &'static str {
+        match self {
+            Self::Spanish => "CONSOLA OVERDRIVE",
+            Self::English => "OVERDRIVE CONSOLE",
+        }
+    }
+
+    pub(crate) const fn panel_live_status(self) -> &'static str {
+        match self {
+            Self::Spanish => "ESTADO EN VIVO",
+            Self::English => "LIVE STATUS",
+        }
+    }
+
+    pub(crate) const fn panel_profile_plan(self) -> &'static str {
+        match self {
+            Self::Spanish => "PLAN DE PERFIL",
+            Self::English => "PROFILE PLAN",
+        }
+    }
+
+    pub(crate) const fn panel_payload_preview(self) -> &'static str {
+        match self {
+            Self::Spanish => "PREVIEW PAYLOAD",
+            Self::English => "PAYLOAD PREVIEW",
+        }
+    }
+
+    pub(crate) const fn panel_restore_plan(self) -> &'static str {
+        match self {
+            Self::Spanish => "PLAN RESTORE",
+            Self::English => "RESTORE PLAN",
+        }
+    }
+
+    pub(crate) const fn linked(self) -> &'static str {
+        match self {
+            Self::Spanish => "conectado",
+            Self::English => "linked",
+        }
+    }
+
+    pub(crate) const fn not_linked(self) -> &'static str {
+        match self {
+            Self::Spanish => "sin conexion",
+            Self::English => "not linked",
+        }
+    }
+
+    pub(crate) const fn desktop_active(self) -> &'static str {
+        match self {
+            Self::Spanish => "desktop activo",
+            Self::English => "desktop active",
+        }
+    }
+
+    pub(crate) const fn minimal_shell(self) -> &'static str {
+        match self {
+            Self::Spanish => "shell minima",
+            Self::English => "minimal shell",
+        }
+    }
+
+    pub(crate) const fn explorer_active(self) -> &'static str {
+        match self {
+            Self::Spanish => "explorer activo",
+            Self::English => "explorer active",
+        }
+    }
+
+    pub(crate) const fn running(self) -> &'static str {
+        match self {
+            Self::Spanish => "activo",
+            Self::English => "running",
+        }
+    }
+
+    pub(crate) const fn closed(self) -> &'static str {
+        match self {
+            Self::Spanish => "cerrado",
+            Self::English => "closed",
+        }
+    }
+
+    pub(crate) const fn stopped(self) -> &'static str {
+        match self {
+            Self::Spanish => "detenido",
+            Self::English => "stopped",
+        }
+    }
+
+    pub(crate) const fn ready_lower(self) -> &'static str {
+        match self {
+            Self::Spanish => "listo",
+            Self::English => "ready",
+        }
+    }
+
+    pub(crate) const fn high_performance_lower(self) -> &'static str {
+        match self {
+            Self::Spanish => "alto rendimiento",
+            Self::English => "high performance",
+        }
+    }
+
+    pub(crate) const fn unchanged(self) -> &'static str {
+        match self {
+            Self::Spanish => "sin cambios",
+            Self::English => "unchanged",
+        }
+    }
+
+    pub(crate) const fn stop_on_overdrive(self) -> &'static str {
+        match self {
+            Self::Spanish => "cerrar en OD",
+            Self::English => "stop on OD",
+        }
+    }
+
+    pub(crate) const fn keep_running(self) -> &'static str {
+        match self {
+            Self::Spanish => "mantener activo",
+            Self::English => "keep running",
+        }
+    }
+
+    pub(crate) const fn clean_prefix(self) -> &'static str {
+        match self {
+            Self::Spanish => "  limpio: ",
+            Self::English => "  clean: ",
+        }
+    }
+
+    pub(crate) const fn no_configured_targets(self) -> &'static str {
+        match self {
+            Self::Spanish => "no hay objetivos configurados detectados",
+            Self::English => "no configured targets detected",
+        }
+    }
+
+    pub(crate) const fn restart_if_closed(self) -> &'static str {
+        match self {
+            Self::Spanish => "reiniciar si esta cerrado",
+            Self::English => "restart if closed",
+        }
+    }
+
+    pub(crate) const fn closed_apps_stay_closed(self) -> &'static str {
+        match self {
+            Self::Spanish => "las apps cerradas siguen cerradas",
+            Self::English => "closed apps stay closed",
+        }
+    }
+
+    pub(crate) const fn undo_overdrive_changes(self) -> &'static str {
+        match self {
+            Self::Spanish => "revierte cambios de overdrive",
+            Self::English => "undo overdrive changes",
+        }
+    }
+
+    pub(crate) const fn no_target(self) -> &'static str {
+        match self {
+            Self::Spanish => "sin objetivo",
+            Self::English => "no target",
+        }
+    }
+
+    pub(crate) const fn defaults_only(self) -> &'static str {
+        match self {
+            Self::Spanish => "solo defaults",
+            Self::English => "defaults only",
+        }
+    }
+
+    pub(crate) const fn internal_theme(self) -> &'static str {
+        match self {
+            Self::Spanish => "tema interno",
+            Self::English => "internal theme",
+        }
+    }
+
+    pub(crate) const fn internal(self) -> &'static str {
+        match self {
+            Self::Spanish => "interno",
+            Self::English => "internal",
+        }
+    }
+
+    pub(crate) const fn not_set(self) -> &'static str {
+        match self {
+            Self::Spanish => "no configurado",
+            Self::English => "not set",
+        }
+    }
+
+    pub(crate) const fn not_found(self) -> &'static str {
+        match self {
+            Self::Spanish => "no encontrado",
+            Self::English => "not found",
+        }
+    }
+
+    pub(crate) const fn steam_active(self) -> &'static str {
+        match self {
+            Self::Spanish => "Steam activo",
+            Self::English => "Steam active",
+        }
+    }
+
+    pub(crate) const fn manual_folders_later(self) -> &'static str {
+        match self {
+            Self::Spanish => "carpetas manuales -> Epic despues",
+            Self::English => "manual folders -> Epic later",
+        }
+    }
+
+    pub(crate) const fn panel_settings(self) -> &'static str {
+        match self {
+            Self::Spanish => "AJUSTES",
+            Self::English => "SETTINGS",
+        }
+    }
+
+    pub(crate) const fn panel_runtime_themes(self) -> &'static str {
+        match self {
+            Self::Spanish => "RUNTIME / TEMAS",
+            Self::English => "RUNTIME / THEMES",
+        }
+    }
+
+    pub(crate) const fn panel_integrations(self) -> &'static str {
+        match self {
+            Self::Spanish => "INTEGRACIONES",
+            Self::English => "INTEGRATIONS",
+        }
+    }
+
+    pub(crate) const fn theme_presets_heading(self) -> &'static str {
+        match self {
+            Self::Spanish => " PRESETS DE TEMA",
+            Self::English => " THEME PRESETS",
+        }
+    }
+
+    pub(crate) const fn roadmap_heading(self) -> &'static str {
+        " ROADMAP"
+    }
+
+    pub(crate) const fn preset_cyberpunk_desc(self) -> &'static str {
+        match self {
+            Self::Spanish => "neon de alto contraste",
+            Self::English => "high contrast neon",
+        }
+    }
+
+    pub(crate) const fn preset_hacker_desc(self) -> &'static str {
+        match self {
+            Self::Spanish => "ops de terminal negra",
+            Self::English => "black terminal ops",
+        }
+    }
+
+    pub(crate) const fn preset_gruvbox_desc(self) -> &'static str {
+        match self {
+            Self::Spanish => "paleta terminal calida",
+            Self::English => "warm terminal palette",
+        }
+    }
+
+    pub(crate) const fn preset_tokyo_desc(self) -> &'static str {
+        match self {
+            Self::Spanish => "paleta noche fria",
+            Self::English => "cool night palette",
+        }
+    }
+
+    pub(crate) const fn preset_mocha_desc(self) -> &'static str {
+        match self {
+            Self::Spanish => "pasteles suaves",
+            Self::English => "soft pastel palette",
+        }
+    }
+
+    pub(crate) const fn roadmap_steam_now(self) -> &'static str {
+        match self {
+            Self::Spanish => "Steam ahora",
+            Self::English => "Steam now",
+        }
+    }
+
+    pub(crate) const fn roadmap_steam_later(self) -> &'static str {
+        match self {
+            Self::Spanish => "Epic/carpetas manuales despues",
+            Self::English => "Epic/manual folders later",
+        }
+    }
+
+    pub(crate) const fn roadmap_presentmon(self) -> &'static str {
+        match self {
+            Self::Spanish => "PresentMon Console via winget",
+            Self::English => "PresentMon Console via winget",
+        }
+    }
+
+    pub(crate) const fn panel_history(self) -> &'static str {
+        match self {
+            Self::Spanish => "HISTORIAL",
+            Self::English => "HISTORY",
+        }
+    }
+
+    pub(crate) const fn panel_history_control(self) -> &'static str {
+        match self {
+            Self::Spanish => "CONTROL HISTORIAL",
+            Self::English => "HISTORY CONTROL",
+        }
+    }
+
+    pub(crate) const fn panel_history_digest(self) -> &'static str {
+        match self {
+            Self::Spanish => "RESUMEN HISTORIAL",
+            Self::English => "HISTORY DIGEST",
+        }
+    }
+
+    pub(crate) const fn no_history_yet_sentence(self) -> &'static str {
+        match self {
+            Self::Spanish => "No hay historial todavia.",
+            Self::English => "No history yet.",
+        }
+    }
+
+    pub(crate) const fn history_logged_detail(self) -> &'static str {
+        match self {
+            Self::Spanish => "previews overdrive, restores, lanzamientos Steam, sesiones",
+            Self::English => "overdrive previews, restore runs, Steam launches, sessions",
+        }
+    }
+
+    pub(crate) const fn none_yet(self) -> &'static str {
+        match self {
+            Self::Spanish => "nada todavia",
+            Self::English => "none yet",
+        }
+    }
+
+    pub(crate) const fn history_feeds_heading(self) -> &'static str {
+        match self {
+            Self::Spanish => " FUENTES DEL HISTORIAL",
+            Self::English => " HISTORY FEEDS",
+        }
+    }
+
+    pub(crate) const fn history_feed_overdrive(self) -> &'static str {
+        match self {
+            Self::Spanish => "que cambio antes de jugar",
+            Self::English => "what changed before gaming",
+        }
+    }
+
+    pub(crate) const fn history_feed_restore(self) -> &'static str {
+        match self {
+            Self::Spanish => "que volvio a Windows",
+            Self::English => "what returned to Windows",
+        }
+    }
+
+    pub(crate) const fn history_feed_sessions(self) -> &'static str {
+        match self {
+            Self::Spanish => "lanzamientos y notas de timer",
+            Self::English => "game launch and timer notes",
+        }
+    }
+
+    pub(crate) const fn steam_no_games_detected(self) -> &'static str {
+        match self {
+            Self::Spanish => "No hay juegos detectados. ",
+            Self::English => "No games detected. ",
+        }
+    }
+
+    pub(crate) const fn scan_library_hint(self) -> &'static str {
+        match self {
+            Self::Spanish => " escanear biblioteca",
+            Self::English => " scan library",
+        }
+    }
+
+    pub(crate) const fn panel_steam_scanning(self) -> &'static str {
+        match self {
+            Self::Spanish => "STEAM / ESCANEANDO",
+            Self::English => "STEAM / SCANNING",
+        }
+    }
+
+    pub(crate) const fn panel_steam_library(self) -> &'static str {
+        match self {
+            Self::Spanish => "BIBLIOTECA STEAM",
+            Self::English => "STEAM LIBRARY",
+        }
+    }
+
+    pub(crate) const fn panel_selected_game(self) -> &'static str {
+        match self {
+            Self::Spanish => "JUEGO SELECCIONADO",
+            Self::English => "SELECTED GAME",
+        }
+    }
+
+    pub(crate) const fn preview_od_launch(self) -> &'static str {
+        match self {
+            Self::Spanish => " Preview + lanzar OD",
+            Self::English => " Preview + OD launch",
+        }
+    }
+
+    pub(crate) const fn launch_normally(self) -> &'static str {
+        match self {
+            Self::Spanish => " Lanzar normal",
+            Self::English => " Launch normally",
+        }
+    }
+
+    pub(crate) const fn scan_steam_library(self) -> &'static str {
+        match self {
+            Self::Spanish => " Escanear biblioteca Steam",
+            Self::English => " Scan Steam library",
+        }
+    }
+
+    pub(crate) const fn launch_game_timer_hint(self) -> &'static str {
+        match self {
+            Self::Spanish => "  Lanza un juego para iniciar el temporizador",
+            Self::English => "  Launch a game to start a session timer",
+        }
+    }
+
+    pub(crate) const fn end_session(self) -> &'static str {
+        match self {
+            Self::Spanish => " Cerrar sesion",
+            Self::English => " End Session",
+        }
+    }
+
+    pub(crate) const fn panel_steam_tools(self) -> &'static str {
+        match self {
+            Self::Spanish => "HERRAMIENTAS STEAM",
+            Self::English => "STEAM TOOLS",
+        }
+    }
+
+    pub(crate) const fn scanning(self) -> &'static str {
+        match self {
+            Self::Spanish => "escaneando",
+            Self::English => "scanning",
+        }
+    }
+
+    pub(crate) const fn scan_libraries(self) -> &'static str {
+        match self {
+            Self::Spanish => " Escanear bibliotecas  ",
+            Self::English => " Scan libraries  ",
+        }
+    }
+
+    pub(crate) const fn install_selected(self) -> &'static str {
+        match self {
+            Self::Spanish => " Instalar seleccionado  ",
+            Self::English => " Install selected  ",
+        }
+    }
+
+    pub(crate) const fn properties_action(self) -> &'static str {
+        match self {
+            Self::Spanish => " Propiedades  ",
+            Self::English => " Properties  ",
+        }
+    }
+
+    pub(crate) const fn uninstall_action(self) -> &'static str {
+        match self {
+            Self::Spanish => " Desinstalar",
+            Self::English => " Uninstall",
+        }
+    }
+
+    pub(crate) const fn end_current_timer(self) -> &'static str {
+        match self {
+            Self::Spanish => " Cerrar timer actual",
+            Self::English => " End current timer",
+        }
+    }
+
+    pub(crate) const fn panel_runtime(self) -> &'static str {
+        "RUNTIME"
+    }
+
+    pub(crate) const fn none_detected(self) -> &'static str {
+        match self {
+            Self::Spanish => "ninguno detectado",
+            Self::English => "none detected",
+        }
+    }
+
+    pub(crate) const fn panel_library_index(self) -> &'static str {
+        match self {
+            Self::Spanish => "INDICE BIBLIOTECA",
+            Self::English => "LIBRARY INDEX",
+        }
+    }
+
+    pub(crate) const fn browse(self) -> &'static str {
+        match self {
+            Self::Spanish => " navegar  ",
+            Self::English => " browse  ",
+        }
+    }
+
+    pub(crate) const fn mode_overdrive(self) -> &'static str {
+        "overdrive"
+    }
+
+    pub(crate) const fn mode_normal(self) -> &'static str {
+        "normal"
     }
 }

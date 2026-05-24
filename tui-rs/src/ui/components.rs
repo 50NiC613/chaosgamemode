@@ -5,6 +5,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders},
 };
 
+use crate::i18n::Language;
 use crate::theme::Theme;
 
 // ── Re-usable block styles ──────────────────────────────────────────────
@@ -168,4 +169,223 @@ pub(super) fn bar_line(theme: &Theme, percent: u16, width: usize, color: Color) 
 
 pub(super) fn panel_bar_width(area: Rect) -> usize {
     usize::from(area.width.saturating_sub(4)).clamp(12, 52)
+}
+
+pub(super) fn localized_steam_status(status: &str, language: Language) -> String {
+    if status == "scanning Steam libraries..." {
+        return match language {
+            Language::Spanish => "escaneando bibliotecas Steam...".to_string(),
+            Language::English => "scanning Steam libraries...".to_string(),
+        };
+    }
+    if status == "Steam no encontrado en rutas conocidas" {
+        return match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "Steam not found in known paths".to_string(),
+        };
+    }
+    if let Some(count) = status.strip_suffix(" Steam games detected") {
+        return match language {
+            Language::Spanish => format!("{count} juegos Steam detectados"),
+            Language::English => status.to_string(),
+        };
+    }
+    status.to_string()
+}
+
+pub(super) fn localized_hardware_status(status: &str, language: Language) -> String {
+    if status == "hardware sensors pending" {
+        return match language {
+            Language::Spanish => "sensores de hardware pendientes".to_string(),
+            Language::English => status.to_string(),
+        };
+    }
+    if status == "hardware sensors unavailable" {
+        return match language {
+            Language::Spanish => "sensores de hardware no disponibles".to_string(),
+            Language::English => status.to_string(),
+        };
+    }
+    if status == "hardware sensors unavailable: powershell" {
+        return match language {
+            Language::Spanish => "sensores no disponibles: powershell".to_string(),
+            Language::English => status.to_string(),
+        };
+    }
+    if let Some(backend) = status.strip_prefix("hardware sensors: ") {
+        return match language {
+            Language::Spanish => format!("sensores de hardware: {backend}"),
+            Language::English => status.to_string(),
+        };
+    }
+    status.to_string()
+}
+
+pub(super) fn localized_frame_status(status: &str, language: Language) -> String {
+    if status == "PresentMon waiting for Steam game" {
+        return match language {
+            Language::Spanish => "PresentMon esperando juego Steam".to_string(),
+            Language::English => status.to_string(),
+        };
+    }
+    if let Some(process) = status.strip_prefix("PresentMon starting ") {
+        return match language {
+            Language::Spanish => format!("PresentMon iniciando {process}"),
+            Language::English => status.to_string(),
+        };
+    }
+    if let Some(process) = status.strip_prefix("PresentMon tracking ") {
+        return match language {
+            Language::Spanish => format!("PresentMon siguiendo {process}"),
+            Language::English => status.to_string(),
+        };
+    }
+    if status == "PresentMon no encontrado; configura integrations.presentmon_exe" {
+        return match language {
+            Language::Spanish => status.to_string(),
+            Language::English => {
+                "PresentMon not found; configure integrations.presentmon_exe".to_string()
+            }
+        };
+    }
+    if let Some(path) = status.strip_prefix("PresentMon path invalido: ") {
+        return match language {
+            Language::Spanish => status.to_string(),
+            Language::English => format!("Invalid PresentMon path: {path}"),
+        };
+    }
+    if status == "PresentMon no entrego stdout" {
+        return match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "PresentMon did not provide stdout".to_string(),
+        };
+    }
+    status.to_string()
+}
+
+pub(super) fn localized_presentmon_status(status: &str, language: Language) -> String {
+    match status {
+        "PresentMon listo desde config" => match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "PresentMon ready from config".to_string(),
+        },
+        "PresentMon configurado pero no existe" => match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "PresentMon configured but missing".to_string(),
+        },
+        "PresentMon listo desde env" => match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "PresentMon ready from env".to_string(),
+        },
+        "PRESENTMON_EXE apunta a una ruta invalida" => match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "PRESENTMON_EXE points to an invalid path".to_string(),
+        },
+        "PresentMon listo desde winget" => match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "PresentMon ready from winget".to_string(),
+        },
+        "PresentMon listo desde PATH" => match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "PresentMon ready from PATH".to_string(),
+        },
+        "PresentMon no encontrado" => match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "PresentMon not found".to_string(),
+        },
+        _ => status.to_string(),
+    }
+}
+
+pub(super) fn localized_config_status(status: &str, language: Language) -> String {
+    if status == "config.toml no encontrado; usando defaults" {
+        return match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "config.toml not found; using defaults".to_string(),
+        };
+    }
+    if status == "config defaults" {
+        return match language {
+            Language::Spanish => "defaults de config".to_string(),
+            Language::English => status.to_string(),
+        };
+    }
+    if let Some(path) = status.strip_prefix("config loaded: ") {
+        return match language {
+            Language::Spanish => format!("config cargada: {path}"),
+            Language::English => status.to_string(),
+        };
+    }
+    if status == "process config: nombre vacio" {
+        return match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "process config: empty name".to_string(),
+        };
+    }
+    if let Some(err) = status.strip_prefix("config save error: ") {
+        return match language {
+            Language::Spanish => format!("error guardando config: {err}"),
+            Language::English => status.to_string(),
+        };
+    }
+    status.to_string()
+}
+
+pub(super) fn localized_theme_status(status: &str, language: Language) -> String {
+    if status == "tema interno activo; theme.toml no encontrado" {
+        return match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "internal theme active; theme.toml not found".to_string(),
+        };
+    }
+    if let Some(preset) = status
+        .strip_prefix("tema activo: ")
+        .and_then(|value| value.strip_suffix(" en memoria; theme.toml no encontrado"))
+    {
+        return match language {
+            Language::Spanish => status.to_string(),
+            Language::English => {
+                format!("active theme: {preset} in memory; theme.toml not found")
+            }
+        };
+    }
+    if let Some(preset) = status
+        .strip_prefix("tema activo: ")
+        .and_then(|value| value.strip_suffix(" guardado"))
+    {
+        return match language {
+            Language::Spanish => status.to_string(),
+            Language::English => format!("active theme: {preset} saved"),
+        };
+    }
+    if let Some(preset) = status.strip_prefix("tema activo: ") {
+        return match language {
+            Language::Spanish => status.to_string(),
+            Language::English => format!("active theme: {preset}"),
+        };
+    }
+    if let Some(err) = status.strip_prefix("error de tema: ") {
+        return match language {
+            Language::Spanish => status.to_string(),
+            Language::English => format!("theme error: {err}"),
+        };
+    }
+    status.to_string()
+}
+
+pub(super) fn localized_session_source(source: &str, language: Language) -> &'static str {
+    match (language, source) {
+        (Language::Spanish, "auto-detected") => "auto-detectado",
+        (Language::English, "auto-detected") => "auto-detected",
+        (_, "manual") => "manual",
+        _ => "unknown",
+    }
+}
+
+pub(super) fn localized_source_value(source: &'static str, language: Language) -> &'static str {
+    match (language, source) {
+        (Language::Spanish, "none") => "ninguno",
+        (Language::English, "none") => "none",
+        _ => source,
+    }
 }

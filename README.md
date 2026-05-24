@@ -22,6 +22,7 @@ Chaos Game Mode is a terminal dashboard and optimizer for Windows gaming session
 - Shows live CPU, RAM, GPU, VRAM, temperature, FPS, 1% low, frametime, and removable background memory where data is available.
 - Detects Steam libraries, lists installed games, launches games normally or with an Overdrive preview flow.
 - Tracks active Steam sessions and shows elapsed game time.
+- Opens a dedicated `Frames` tab for MangoHUD-style FPS, frametime, PresentMon status, GPU/CPU traces, and active game context.
 - Marks processes as `TARGET`, `KEEP`, `WATCH`, or `HIDDEN` so you can tune what the optimizer should touch.
 - Protects important apps by default, including SteelSeries tools.
 - Applies reversible Overdrive actions: high-performance power plan, service cleanup, Steam priority, process cleanup, and optional Explorer handling by profile.
@@ -60,6 +61,8 @@ Chaos Game Mode will look for PresentMon in this order:
 4. the default WinGet installation path
 
 If PresentMon is missing, the app still runs. FPS, frametime, and 1% low will show as unavailable until the tool is detected.
+
+When a Steam game is launched or auto-detected, the TUI can move into the `Frames` tab so the second monitor becomes a focused performance view instead of crowding the main dashboard.
 
 ### Installation
 
@@ -244,6 +247,7 @@ Chaos Game Mode es un dashboard y optimizador en terminal para sesiones de gamin
 - Muestra CPU, RAM, GPU, VRAM, temperaturas, FPS, 1% low, frametime y memoria recuperable cuando esos datos estan disponibles.
 - Detecta bibliotecas de Steam, lista juegos instalados y permite lanzarlos normal o con Overdrive.
 - Lleva un contador de sesion cuando un juego de Steam esta activo.
+- Abre una tab dedicada `Frames`, estilo MangoHUD, con FPS, frametime, estado de PresentMon, trazas GPU/CPU y contexto del juego activo.
 - Clasifica procesos como `TARGET`, `KEEP`, `WATCH` u `HIDDEN` para decidir que se puede cerrar y que debe respetarse.
 - Protege apps importantes por defecto, incluyendo herramientas de SteelSeries.
 - Aplica acciones reversibles: plan de energia de alto rendimiento, limpieza de servicios, prioridad a Steam, limpieza de procesos y manejo opcional de Explorer segun perfil.
@@ -360,6 +364,8 @@ presentmon_exe = "D:\\Tools\\PresentMon.exe"
 
 Si PresentMon no esta disponible, la TUI sigue funcionando; solo los datos de frames quedan en estado no disponible.
 
+Cuando se lanza o detecta un juego de Steam, la TUI puede enfocarse en la tab `Frames` para que el segundo monitor sea una vista de rendimiento limpia y no sobrecargue el dashboard.
+
 ### Roadmap
 
 Steam queda como base actual. Para futuro se plantea:
@@ -406,7 +412,7 @@ tui-rs\src\app.rs           event loop, app state, key handling
 tui-rs\src\ui.rs            main frame, header, tabs, footer, modals
 tui-rs\src\ui\dashboard.rs  telemetry dashboard
 tui-rs\src\ui\steam_panel.rs Steam library and session panels
-tui-rs\src\ui\pages.rs      processes, overdrive, system, history, settings
+tui-rs\src\ui\pages.rs      frames, processes, overdrive, system, history, settings
 tui-rs\src\config.rs        profiles, process policy, integrations, UI config
 tui-rs\src\steam.rs         Steam library discovery and URI commands
 tui-rs\src\presentmon.rs    PresentMon probing and frame capture
@@ -417,33 +423,43 @@ tui-rs\src\i18n.rs          UI language strings
 
 ## GitHub Releases
 
-Recommended manual release flow:
+Releases are automated by `.github\workflows\release.yml`.
+
+Recommended flow:
 
 1. Update `tui-rs\Cargo.toml` version.
 2. Run the quality checks from the development section.
-3. Build the release binary:
+3. Create a test tag first:
 
 ```powershell
-cd D:\Dev\chaosgamemode\tui-rs
-cargo build --release
+git tag -a v0.1.0-test -m "Chaos Game Mode v0.1.0-test"
+git push origin v0.1.0-test
 ```
 
-4. Build the MSI:
+Tags ending in `-test` create prereleases, which are useful for validating the MSI workflow before publishing a real version.
+
+4. Create the real release tag:
 
 ```powershell
-cd D:\Dev\chaosgamemode
-.\build-msi.ps1 -InstallWix
+git tag -a v1.0.0 -m "Chaos Game Mode v1.0.0"
+git push origin v1.0.0
 ```
 
-5. Create a GitHub Release with:
+The workflow builds and uploads:
 
-- `ChaosGameMode-<version>-x64.msi`
+- `ChaosGameMode-v<version>-x64.msi`
 - `chaosgamemode.exe`
 - `config.toml`
 - `theme.toml`
-- release notes summarizing changes, requirements, and known limitations
+- generated release notes
 
-Suggested release notes structure:
+Local MSI builds are still supported:
+
+```powershell
+.\build-msi.ps1 -InstallWix
+```
+
+Suggested manual release notes structure:
 
 ```markdown
 ## Added

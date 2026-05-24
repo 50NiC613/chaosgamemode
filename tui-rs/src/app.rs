@@ -57,6 +57,7 @@ enum PendingAction {
 pub(crate) enum Tab {
     Dashboard,
     Steam,
+    Frames,
     Processes,
     Boost,
     System,
@@ -72,9 +73,10 @@ pub(crate) struct TabNavSlot {
 }
 
 impl Tab {
-    pub(crate) const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 8] = [
         Self::Dashboard,
         Self::Steam,
+        Self::Frames,
         Self::Processes,
         Self::Boost,
         Self::System,
@@ -94,6 +96,7 @@ impl Tab {
         match self {
             Self::Dashboard => "\u{f0e4}",
             Self::Steam => "\u{f1b6}",
+            Self::Frames => "\u{f201}",
             Self::Processes => "\u{f0ae}",
             Self::Boost => "\u{f0e7}",
             Self::System => "\u{f233}",
@@ -106,11 +109,12 @@ impl Tab {
         match self {
             Self::Dashboard => 0,
             Self::Steam => 1,
-            Self::Processes => 2,
-            Self::Boost => 3,
-            Self::System => 4,
-            Self::History => 5,
-            Self::Settings => 6,
+            Self::Frames => 2,
+            Self::Processes => 3,
+            Self::Boost => 4,
+            Self::System => 5,
+            Self::History => 6,
+            Self::Settings => 7,
         }
     }
 
@@ -315,7 +319,7 @@ fn load_history_view(language: Language) -> HistoryView {
         Err(err) => HistoryView {
             path: history::current_path(),
             lines: Vec::new(),
-            status: format!("history error: {err}"),
+            status: language.history_read_error(&err),
         },
     }
 }
@@ -608,8 +612,14 @@ fn set_tab(app: &mut App, tab: Tab) {
     app.tab = tab;
     if app.tab == Tab::History {
         refresh_history(app);
-    } else if app.tab == Tab::Settings {
+    } else if matches!(app.tab, Tab::Frames | Tab::Settings) {
         refresh_presentmon_probe(app);
+    }
+}
+
+fn focus_frames_for_game(app: &mut App) {
+    if matches!(app.tab, Tab::Dashboard | Tab::Steam) {
+        set_tab(app, Tab::Frames);
     }
 }
 
@@ -1034,6 +1044,7 @@ fn start_auto_detected_session_with_log(app: &mut App, game: SteamGame, mut log:
     app.auto_session_ignore_app_id = None;
     app.session.start_detected(&game);
     app.auto_session_status = language.detected(&truncate(&game.name, 28));
+    focus_frames_for_game(app);
     log.push(format!(
         "  {}: {} (#{})",
         language.auto_detected_game(),
@@ -1242,6 +1253,7 @@ fn launch_steam_game_with_overdrive(app: &mut App, game: SteamGame) {
     app.auto_session_ignore_app_id = None;
     app.session.start(&game, true);
     app.auto_session_status = language.manual_session_active().to_string();
+    focus_frames_for_game(app);
     log.push(format!("  \u{f017} {}", language.session_started()));
 
     append_action_history(&mut log, "steam_overdrive_launch", &profile_name, language);
@@ -1275,6 +1287,7 @@ fn launch_steam_game_without_overdrive(app: &mut App, game: SteamGame) {
     app.auto_session_ignore_app_id = None;
     app.session.start(&game, false);
     app.auto_session_status = language.manual_session_active().to_string();
+    focus_frames_for_game(app);
     log.push(format!("  \u{f017} {}", language.session_started()));
 
     append_action_history(&mut log, "steam_launch", &profile_name, language);
@@ -1285,11 +1298,17 @@ fn finish_active_session(app: &mut App) -> Vec<String> {
     let language = app.config.ui.language;
     let mut log = Vec::new();
     if let Some(session) = app.session.stop() {
+        let duration = format_duration(Duration::from_secs(session.seconds));
+        app.session.last_completed = Some(language.completed_session_label(
+            &session.name,
+            &duration,
+            session.source.as_str(),
+        ));
         log.push(format!(
             "\u{f017} {}: {} / {}",
             language.session_closed_prefix(),
             session.name,
-            format_duration(Duration::from_secs(session.seconds))
+            duration
         ));
         append_session_history(&mut log, &session, language);
     } else {
@@ -1343,6 +1362,13 @@ fn handle_event(app: &mut App, event: Event) -> bool {
                 }
                 KeyCode::Char('r') | KeyCode::Char('R') if app.tab == Tab::Settings => {
                     refresh_presentmon_probe(app);
+                }
+                KeyCode::Char('r') | KeyCode::Char('R') if app.tab == Tab::Frames => {
+                    refresh_presentmon_probe(app);
+                }
+                KeyCode::Char('e') | KeyCode::Char('E') if app.tab == Tab::Frames => {
+                    let output = finish_active_session_from_user(app);
+                    show_output(app, output);
                 }
                 KeyCode::Up if app.tab == Tab::Steam => {
                     app.steam.select_previous();

@@ -48,6 +48,7 @@ tui-rs/src/
   ui/dashboard.rs      dashboard de telemetria
   ui/steam_panel.rs    pantalla Steam
   ui/pages.rs          procesos, Overdrive y sistema
+  i18n.rs              textos localizados ES/EN para UI, logs y estados
 ```
 
 Dependencias relevantes:
@@ -67,7 +68,10 @@ Funciones que ya existen y deben conservarse:
 - Perfiles `safe`, `balanced` y `aggressive`.
 - `config.toml` editable y persistencia de cambios de procesos.
 - `theme.toml` con recarga en vivo.
-- Tabs: Dashboard, Steam, Procesos, Overdrive y Sistema.
+- Tabs: Dashboard, Steam, Frames, Procesos, Overdrive, Sistema, Historial y
+  Ajustes.
+- Navegacion por mouse en la barra de tabs; los hitboxes deben coincidir con
+  el layout renderizado.
 - Clasificador de procesos con `TARGET`, `KEEP`, `WATCH` y `HIDDEN`.
 - Filtro de procesos con `/`.
 - Vista de procesos ocultos con `V`.
@@ -76,6 +80,9 @@ Funciones que ya existen y deben conservarse:
 - Escaneo de bibliotecas Steam.
 - Lanzamiento Steam normal y con Overdrive.
 - Sesiones Steam con timer e historial.
+- Idioma configurable en `[ui] language = "es"` o `"en"`.
+- Tema hacker inspirado en Mr. Robot, junto a Cyberpunk, Gruvbox, Tokyo Night,
+  Catppuccin/Mocha y otros presets.
 
 ## Reglas de trabajo
 
@@ -91,6 +98,8 @@ Funciones que ya existen y deben conservarse:
 - Mantener compatibilidad con Windows.
 - Mantener compatibilidad con `theme.toml`, `config.toml`, `CHAOS_THEME`,
   `CHAOS_CONFIG`, `CHAOS_HISTORY` y `STEAM_DIR`.
+- Mantener el sistema de i18n centralizado en `src/i18n.rs`; no introducir
+  nuevos textos visibles hardcodeados en pantallas, modales o action logs.
 - Al final, ejecutar `cargo fmt`, `cargo test` y
   `cargo clippy --all-targets --all-features -- -D warnings`.
 
@@ -119,6 +128,7 @@ src/ui/components.rs
 src/ui/dashboard.rs
 src/ui/pages.rs
 src/ui/steam_panel.rs
+src/i18n.rs
 ```
 
 Identifica:
@@ -130,6 +140,7 @@ Identifica:
 - Layouts que pueden romperse en terminales pequenas.
 - Estados vacios o de loading poco claros.
 - Footer/header sobrecargados.
+- Strings visibles que no pasen por `Language`.
 
 No hagas una refactorizacion grande hasta entender como fluyen `App`, `Screen`,
 `Tab`, `PendingAction`, `SystemState`, `SteamLibrary` y `Theme`.
@@ -204,12 +215,12 @@ Mejorar `Tabs` en `src/ui.rs`:
 No cambies nombres de tabs salvo para hacerlos mas claros:
 
 ```text
-Dashboard
-Steam
-Procesos
-Overdrive
-Sistema
+Dashboard, Steam, Frames, Procesos, Overdrive, Sistema, Historial, Ajustes
 ```
+
+Si tocas el render de tabs, valida tambien el click de mouse sobre cada tab.
+Un bug anterior desplazaba `Sistema`, `Historial` y `Ajustes`; los calculos de
+`Tab::nav_slots` y `Tab::from_nav_column` deben mantenerse alineados.
 
 ## Fase 5: modal real de confirmacion Overdrive
 
@@ -259,6 +270,12 @@ Importante:
 - Panel de juego seleccionado claro.
 - Panel de sesion activa destacado.
 - Acciones `Enter`, `L`, `S` y `E` como keycaps consistentes.
+
+### Frames
+
+- Debe mostrar FPS, promedio, 1% low, frame time, samples y target actual.
+- Debe localizar estados de PresentMon y respetar `[ui] language`.
+- `R` debe refrescar deteccion de PresentMon y `E` cerrar la sesion activa.
 
 ### Procesos
 
@@ -312,6 +329,34 @@ El resultado debe tener:
 - success
 - warning
 
+El preset `hacker` debe mantenerse: negro profundo, verdes terminal, acentos
+tipo consola de operaciones y legibilidad alta sin convertir toda la app en una
+paleta de un solo verde.
+
+## Fase 7.5: i18n ES/EN
+
+La app ya soporta idioma desde `config.toml`:
+
+```toml
+[ui]
+language = "es" # o "en"
+```
+
+Requisitos:
+
+- Todo texto visible nuevo debe pasar por `src/i18n.rs` o por helpers de
+  localizacion centralizados.
+- Mantener sentido natural en espanol e ingles; no hacer traducciones literales
+  raras.
+- Los acronimos tecnicos universales (`CPU`, `GPU`, `FPS`, `RAM`, `APPID`,
+  `EXE`) pueden quedarse iguales.
+- Los logs de Overdrive, Restore, Steam, sesiones, historial, modales y estados
+  vacios deben respetar el idioma.
+- Los estados generados por subsistemas (`SteamLibrary.status`,
+  `FrameMetrics.status`, `HardwareState.status`, `PresentMonProbe.status`,
+  `config.status`, `theme_status`) deben mostrarse localizados mediante helpers
+  centralizados antes de renderizar.
+
 ## Fase 8: pruebas y verificacion
 
 Ejecutar:
@@ -364,5 +409,6 @@ La tarea se considera completa solo si:
 - La app se adapta a terminales chicas y grandes.
 - `theme.toml` sigue funcionando con hot reload.
 - `config.toml` sigue funcionando.
+- Cambiar `[ui] language` entre `es` y `en` cambia tabs, footer, pantallas,
+  modales, action logs y estados principales sin mezcla rara de idiomas.
 - Tests y clippy pasan.
-
