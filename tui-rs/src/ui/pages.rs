@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use super::components::*;
-use crate::app::App;
+use crate::app::{App, FrameEvent, FrameEventKind};
 use crate::config::{BoostProfile, process_pattern_from_name};
 use crate::i18n::Language;
 use crate::metrics::{readiness_score, scaled_history};
@@ -895,18 +895,23 @@ pub(super) fn render_frames(frame: &mut Frame, app: &App, area: Rect) {
         let columns = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
+                Constraint::Percentage(28),
+                Constraint::Percentage(42),
                 Constraint::Percentage(30),
-                Constraint::Percentage(38),
-                Constraint::Percentage(32),
             ])
             .split(area);
 
         let left = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(10), Constraint::Min(8)])
+            .constraints([
+                Constraint::Length(10),
+                Constraint::Length(12),
+                Constraint::Min(8),
+            ])
             .split(columns[0]);
         render_frames_session_panel(frame, app, left[0]);
         render_frames_probe_panel(frame, app, left[1]);
+        render_frames_event_log(frame, app, left[2]);
 
         let middle = Layout::default()
             .direction(Direction::Vertical)
@@ -931,10 +936,15 @@ pub(super) fn render_frames(frame: &mut Frame, app: &App, area: Rect) {
 
         let right = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .constraints([
+                Constraint::Percentage(45),
+                Constraint::Length(12),
+                Constraint::Min(8),
+            ])
             .split(columns[1]);
         render_frames_trace_panel(frame, app, right[0]);
-        render_frames_hardware_panel(frame, app, right[1]);
+        render_frames_probe_panel(frame, app, right[1]);
+        render_frames_hardware_panel(frame, app, right[2]);
     }
 }
 
@@ -1390,6 +1400,42 @@ fn render_frames_hardware_panel(frame: &mut Frame, app: &App, area: Rect) {
 fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
     let lang = app.config.ui.language;
+    let session_value = app
+        .session
+        .active
+        .as_ref()
+        .map(|session| crate::metrics::truncate(&session.name, 34))
+        .unwrap_or_else(|| lang.none().to_string());
+    let session_color = if app.session.active.is_some() {
+        theme.acid_green
+    } else {
+        theme.muted
+    };
+    let target_value = app
+        .frame_metrics
+        .process_name
+        .as_deref()
+        .map(|target| crate::metrics::truncate(target, 34))
+        .unwrap_or_else(|| {
+            if app.frame_resolution_active() {
+                match lang {
+                    Language::Spanish => "resolviendo".to_string(),
+                    Language::English => "resolving".to_string(),
+                }
+            } else {
+                lang.no_target().to_string()
+            }
+        });
+    let target_color = if app.has_frame_samples() {
+        theme.acid_green
+    } else if app.frame_resolution_active() || app.frame_capture_active() {
+        theme.cyber_yellow
+    } else {
+        theme.muted
+    };
+    let frame_status = frame_hook_status(app, lang);
+    let overlay_status = localized_overlay_status(&app.overlay_status.message, lang);
+
     let lines = vec![
         Line::from(vec![
             metric_label(theme, lang.label_rtss()),
@@ -1400,6 +1446,28 @@ fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
                 } else {
                     theme.hot_red
                 }),
+            ),
+        ]),
+        Line::from(vec![
+            metric_label(theme, "SESSION"),
+            metric_value(session_value, session_color),
+        ]),
+        Line::from(vec![
+            metric_label(theme, lang.label_target()),
+            metric_value(target_value, target_color),
+        ]),
+        Line::from(vec![
+            metric_label(theme, lang.label_capture()),
+            Span::styled(
+                crate::metrics::truncate(&frame_status, 40),
+                Style::new().fg(target_color),
+            ),
+        ]),
+        Line::from(vec![
+            metric_label(theme, lang.label_overlay()),
+            Span::styled(
+                crate::metrics::truncate(&overlay_status, 40),
+                Style::new().fg(overlay_status_color(app)),
             ),
         ]),
         Line::from(vec![
@@ -1421,13 +1489,6 @@ fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(""),
         Line::from(vec![
-            metric_label(theme, lang.label_overlay()),
-            Span::styled(
-                crate::metrics::truncate(&app.overlay_status.message, 40),
-                Style::new().fg(overlay_status_color(app)),
-            ),
-        ]),
-        Line::from(vec![
             keycap(theme, "R"),
             Span::styled(format!(" {}  ", lang.probe()), Style::new().fg(theme.muted)),
             keycap(theme, "S-F12"),
@@ -1441,9 +1502,132 @@ fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
     ];
 
     let panel = Paragraph::new(Text::from(lines))
-        .block(accent_block(theme, lang.panel_rtss(), theme.neon_magenta))
+        .block(accent_block(theme, "HOOK STATUS", theme.neon_magenta))
         .wrap(Wrap { trim: true });
     frame.render_widget(panel, area);
+}
+
+fn render_frames_event_log(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = &app.theme;
+    let lang = app.config.ui.language;
+    let max_lines = area.height.saturating_sub(2).max(1) as usize;
+    let lines = if app.frame_events.is_empty() {
+        vec![Line::from(Span::styled(
+            lang.frames_idle_hint(),
+            Style::new().fg(theme.muted),
+        ))]
+    } else {
+        app.frame_events
+            .iter()
+            .rev()
+            .take(max_lines)
+            .map(|event| frame_event_line(theme, event, lang))
+            .collect()
+    };
+
+    let panel = Paragraph::new(Text::from(lines))
+        .block(accent_block(theme, "HOOK LOG", theme.cyber_yellow))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(panel, area);
+}
+
+fn frame_event_line(
+    theme: &crate::theme::Theme,
+    event: &FrameEvent,
+    lang: Language,
+) -> Line<'static> {
+    let timestamp = crate::metrics::format_duration(event.elapsed);
+    let message = localized_frame_event_message(event, lang);
+    Line::from(vec![
+        Span::styled(format!("{timestamp} "), Style::new().fg(theme.muted)),
+        Span::styled(
+            format!("{:<4} ", event.kind.label()),
+            Style::new().fg(frame_event_color(theme, event)),
+        ),
+        Span::styled(
+            crate::metrics::truncate(&message, 42),
+            Style::new().fg(theme.foreground),
+        ),
+    ])
+}
+
+fn localized_frame_event_message(event: &FrameEvent, lang: Language) -> String {
+    match event.kind {
+        FrameEventKind::Probe => localized_frame_probe_status(&event.message, lang),
+        FrameEventKind::Capture => localized_frame_status(&event.message, lang),
+        FrameEventKind::Overlay => localized_overlay_status(&event.message, lang),
+        FrameEventKind::Session => localized_session_event(&event.message, lang),
+    }
+}
+
+fn localized_session_event(message: &str, lang: Language) -> String {
+    if let Some(game) = message.strip_prefix("Steam session active: ") {
+        return match lang {
+            Language::Spanish => format!("sesion Steam activa: {game}"),
+            Language::English => message.to_string(),
+        };
+    }
+    if let Some(game) = message.strip_prefix("Steam session ended: ") {
+        return match lang {
+            Language::Spanish => format!("sesion Steam cerrada: {game}"),
+            Language::English => message.to_string(),
+        };
+    }
+    message.to_string()
+}
+
+fn localized_overlay_status(message: &str, lang: Language) -> String {
+    match message {
+        "RTSS overlay off" => match lang {
+            Language::Spanish => "RTSS overlay apagado".to_string(),
+            Language::English => message.to_string(),
+        },
+        "RTSS overlay active" => match lang {
+            Language::Spanish => "RTSS overlay activo".to_string(),
+            Language::English => message.to_string(),
+        },
+        "RTSS overlay armed; waiting for Steam game" => match lang {
+            Language::Spanish => "RTSS overlay armado; esperando juego Steam".to_string(),
+            Language::English => message.to_string(),
+        },
+        "RTSS overlay is only available on Windows" => match lang {
+            Language::Spanish => "RTSS overlay solo esta disponible en Windows".to_string(),
+            Language::English => message.to_string(),
+        },
+        _ => message.to_string(),
+    }
+}
+
+fn frame_event_color(theme: &crate::theme::Theme, event: &FrameEvent) -> Color {
+    match event.kind {
+        FrameEventKind::Probe if event.message == "RTSS listo" => theme.acid_green,
+        FrameEventKind::Probe => theme.hot_red,
+        FrameEventKind::Session => theme.orange,
+        FrameEventKind::Capture if event.message.starts_with("RTSS tracking ") => theme.acid_green,
+        FrameEventKind::Capture if event.message.starts_with("RTSS probing ") => theme.cyber_yellow,
+        FrameEventKind::Capture => theme.neon_cyan,
+        FrameEventKind::Overlay if event.message == "RTSS overlay active" => theme.acid_green,
+        FrameEventKind::Overlay if event.message == "RTSS overlay off" => theme.muted,
+        FrameEventKind::Overlay => theme.neon_magenta,
+    }
+}
+
+fn frame_hook_status(app: &App, lang: Language) -> String {
+    if let Some(fps) = app.frame_metrics.fps {
+        return match lang {
+            Language::Spanish => format!("live {:.0} FPS", fps),
+            Language::English => format!("live {:.0} FPS", fps),
+        };
+    }
+
+    if app.frame_metrics.samples > 0 {
+        return match lang {
+            Language::Spanish => format!("{} samples", app.frame_metrics.samples),
+            Language::English => format!("{} samples", app.frame_metrics.samples),
+        };
+    }
+
+    localized_frame_status(&app.frame_metrics.status, lang)
 }
 
 fn overlay_config_label(app: &App, lang: Language) -> &'static str {

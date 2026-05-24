@@ -23,6 +23,7 @@ Chaos Game Mode is a terminal dashboard and optimizer for Windows gaming session
 - Detects Steam libraries, lists installed games, launches games normally or with an Overdrive preview flow.
 - Tracks active Steam sessions and shows elapsed game time.
 - Opens a dedicated `Frames` tab for MangoHUD-style FPS, frametime, RTSS status, GPU/CPU traces, and active game context.
+- Shows a Frames hook log so RTSS, Steam session, game process detection, FPS capture, and overlay state can be checked at a glance.
 - Can publish a lightweight fullscreen OSD through RivaTuner Statistics Server (RTSS), so FPS/session metrics can appear over exclusive fullscreen games.
 - Marks processes as `TARGET`, `KEEP`, `WATCH`, or `HIDDEN` so you can tune what the optimizer should touch.
 - Protects important apps by default, including SteelSeries tools.
@@ -57,6 +58,8 @@ If RTSS is missing or closed, the app still runs. CPU/RAM/GPU/session data stays
 Chaos Game Mode automatically waits for Steam launchers and helper windows, then locks onto the active RTSS game process once real frame samples appear.
 
 When a Steam game is launched or auto-detected, the TUI can move into the `Frames` tab so the second monitor becomes a focused performance view instead of crowding the main dashboard.
+
+The `Frames` tab includes a hook status panel and short hook log. Use it to verify RTSS readiness, the active Steam session, the resolved game process, live FPS samples, and the fullscreen overlay state.
 
 ### Fullscreen Overlay
 
@@ -276,6 +279,7 @@ Chaos Game Mode es un dashboard y optimizador en terminal para sesiones de gamin
 - Detecta bibliotecas de Steam, lista juegos instalados y permite lanzarlos normal o con Overdrive.
 - Lleva un contador de sesion cuando un juego de Steam esta activo.
 - Abre una tab dedicada `Frames`, estilo MangoHUD, con FPS, frametime, estado de RTSS, trazas GPU/CPU y contexto del juego activo.
+- Muestra un hook log en `Frames` para revisar RTSS, sesion de Steam, deteccion del proceso del juego, captura FPS y estado del overlay.
 - Puede publicar un OSD ligero via RivaTuner Statistics Server (RTSS), para ver metricas encima de juegos en fullscreen exclusivo.
 - Clasifica procesos como `TARGET`, `KEEP`, `WATCH` u `HIDDEN` para decidir que se puede cerrar y que debe respetarse.
 - Protege apps importantes por defecto, incluyendo herramientas de SteelSeries.
@@ -308,6 +312,8 @@ Instala RTSS por separado y dejalo abierto mientras juegas. Lo normal es instala
 Si RTSS no esta instalado o esta cerrado, la app sigue funcionando. CPU/RAM/GPU/sesion siguen disponibles; FPS, frametime y 1% low quedan como no disponibles hasta que RTSS exponga frames reales del juego.
 
 Chaos Game Mode espera automaticamente launchers y ventanas auxiliares de Steam, y se queda con el proceso activo cuando RTSS empieza a entregar samples de frames reales.
+
+La tab `Frames` incluye un panel de hook status y un hook log corto. Sirve para confirmar si RTSS esta listo, si hay sesion Steam activa, que proceso del juego se resolvio, si ya hay FPS en vivo y si el overlay fullscreen esta activo.
 
 ### Instalacion
 

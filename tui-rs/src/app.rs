@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -43,6 +43,7 @@ use crate::ui::{render_confirm, render_monitor, render_output, render_theme_menu
 
 const HISTORY_VIEW_LIMIT: usize = 240;
 const FRAME_PROBE_INTERVAL: Duration = Duration::from_secs(5);
+const FRAME_EVENT_LIMIT: usize = 10;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Screen {
@@ -77,6 +78,73 @@ pub(crate) struct TabNavSlot {
     pub(crate) tab: Tab,
     pub(crate) start: u16,
     pub(crate) width: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FrameEventKind {
+    Probe,
+    Session,
+    Capture,
+    Overlay,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FrameEvent {
+    pub(crate) elapsed: Duration,
+    pub(crate) kind: FrameEventKind,
+    pub(crate) message: String,
+}
+
+#[derive(Default)]
+pub(crate) struct FrameEventLog {
+    entries: VecDeque<FrameEvent>,
+}
+
+impl FrameEventKind {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Probe => "RTSS",
+            Self::Session => "GAME",
+            Self::Capture => "FPS",
+            Self::Overlay => "OVR",
+        }
+    }
+}
+
+impl FrameEventLog {
+    pub(crate) fn record(
+        &mut self,
+        elapsed: Duration,
+        kind: FrameEventKind,
+        message: impl Into<String>,
+    ) {
+        let message = message.into();
+        if self
+            .entries
+            .back()
+            .is_some_and(|entry| entry.kind == kind && entry.message == message)
+        {
+            return;
+        }
+
+        if self.entries.len() == FRAME_EVENT_LIMIT {
+            self.entries.pop_front();
+        }
+
+        self.entries.push_back(FrameEvent {
+            elapsed,
+            kind,
+            message,
+        });
+    }
+
+    pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &FrameEvent> {
+        self.entries.iter()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 }
 
 impl Tab {
@@ -197,6 +265,7 @@ pub(crate) struct App {
     learned_frame_targets: HashMap<String, String>,
     pub(crate) frame_metrics: FrameMetrics,
     pub(crate) frame_probe: FrameProbe,
+    pub(crate) frame_events: FrameEventLog,
     last_frame_probe_refresh: Instant,
     pub(crate) steam: SteamLibrary,
     pub(crate) steam_rx: Receiver<SteamScanResult>,
@@ -311,6 +380,7 @@ pub(crate) fn run() -> io::Result<()> {
         learned_frame_targets: HashMap::new(),
         frame_metrics: FrameMetrics::idle(),
         frame_probe,
+        frame_events: FrameEventLog::default(),
         last_frame_probe_refresh: now,
         steam: SteamLibrary::loading(),
         steam_rx,
@@ -335,6 +405,10 @@ pub(crate) fn run() -> io::Result<()> {
         theme_menu_selected: 0,
         pending_action: None,
     };
+    let initial_probe_status = app.frame_probe.status.clone();
+    let initial_overlay_status = app.overlay_status.message.clone();
+    record_frame_event(&mut app, FrameEventKind::Probe, initial_probe_status);
+    record_frame_event(&mut app, FrameEventKind::Overlay, initial_overlay_status);
 
     terminal.clear()?;
     let res = run_app(&mut terminal, &mut app);
@@ -476,7 +550,13 @@ fn drain_hotkeys(app: &mut App) {
 
 fn drain_overlay_status(app: &mut App) {
     while let Ok(status) = app.overlay_status_rx.try_recv() {
+        let changed = app.overlay_status.active != status.active
+            || app.overlay_status.message != status.message;
+        let message = status.message.clone();
         app.overlay_status = status;
+        if changed {
+            record_frame_event(app, FrameEventKind::Overlay, message);
+        }
     }
 }
 
@@ -548,6 +628,24 @@ fn drain_steam_scan(app: &mut App) {
     }
 }
 
+fn record_frame_event(app: &mut App, kind: FrameEventKind, message: impl Into<String>) {
+    app.frame_events
+        .record(app.started_at.elapsed(), kind, message);
+}
+
+fn apply_frame_metrics(app: &mut App, metrics: FrameMetrics) {
+    let changed = app.frame_metrics.status != metrics.status
+        || app.frame_metrics.process_name != metrics.process_name
+        || (app.frame_metrics.samples == 0 && metrics.samples > 0);
+    let event_message = changed.then(|| metrics.status.clone());
+
+    app.frame_metrics = metrics;
+
+    if let Some(message) = event_message {
+        record_frame_event(app, FrameEventKind::Capture, message);
+    }
+}
+
 fn drain_frame_metrics(app: &mut App) {
     let mut metrics = Vec::new();
     let mut disconnected = false;
@@ -579,7 +677,7 @@ fn drain_frame_metrics(app: &mut App) {
                 .fps
                 .map(|fps| fps.round().clamp(0.0, 999.0) as u64)
                 .unwrap_or(0);
-            app.frame_metrics = metric;
+            apply_frame_metrics(app, metric);
             push_history(&mut app.fps_history, fps);
         }
     }
@@ -590,7 +688,7 @@ fn drain_discovery_metric(app: &mut App, metric: FrameMetrics) {
         app.frame_discovery_active = false;
         app.frame_discovery_failed_at = Some(Instant::now());
         app.frame_rx = None;
-        app.frame_metrics = metric;
+        apply_frame_metrics(app, metric);
         return;
     }
 
@@ -604,11 +702,14 @@ fn drain_discovery_metric(app: &mut App, metric: FrameMetrics) {
     }
 
     if let Some(best) = app.frame_resolver.best() {
-        app.frame_metrics = FrameMetrics {
-            process_name: Some(best.process_name.clone()),
-            status: format!("RTSS probing {}", best.process_name),
-            ..FrameMetrics::idle()
-        };
+        apply_frame_metrics(
+            app,
+            FrameMetrics {
+                process_name: Some(best.process_name.clone()),
+                status: format!("RTSS probing {}", best.process_name),
+                ..FrameMetrics::idle()
+            },
+        );
     }
 }
 
@@ -637,10 +738,13 @@ fn sync_frame_monitor(app: &mut App) {
         app.frame_discovery_active = false;
         app.frame_discovery_failed_at = None;
         app.frame_rx = None;
-        app.frame_metrics = FrameMetrics {
-            status: format!("RTSS resolving {}", game.name),
-            ..FrameMetrics::idle()
-        };
+        apply_frame_metrics(
+            app,
+            FrameMetrics {
+                status: format!("RTSS resolving {}", game.name),
+                ..FrameMetrics::idle()
+            },
+        );
         app.fps_history.clear();
     }
 
@@ -658,10 +762,13 @@ fn sync_frame_monitor(app: &mut App) {
                 app.frame_target = None;
                 app.frame_target_started_at = None;
                 app.frame_rx = None;
-                app.frame_metrics = FrameMetrics {
-                    status: format!("RTSS resolving {}", game.name),
-                    ..FrameMetrics::idle()
-                };
+                apply_frame_metrics(
+                    app,
+                    FrameMetrics {
+                        status: format!("RTSS resolving {}", game.name),
+                        ..FrameMetrics::idle()
+                    },
+                );
                 app.fps_history.clear();
             } else {
                 return;
@@ -670,10 +777,13 @@ fn sync_frame_monitor(app: &mut App) {
             app.frame_target = None;
             app.frame_target_started_at = None;
             app.frame_rx = None;
-            app.frame_metrics = FrameMetrics {
-                status: format!("RTSS resolving {}", game.name),
-                ..FrameMetrics::idle()
-            };
+            apply_frame_metrics(
+                app,
+                FrameMetrics {
+                    status: format!("RTSS resolving {}", game.name),
+                    ..FrameMetrics::idle()
+                },
+            );
             app.fps_history.clear();
         }
     }
@@ -708,10 +818,13 @@ fn sync_frame_monitor(app: &mut App) {
 
     maybe_refresh_frame_probe(app);
     if !frame_backend_ready(app) {
-        app.frame_metrics = FrameMetrics {
-            status: app.frame_probe.status.clone(),
-            ..FrameMetrics::idle()
-        };
+        apply_frame_metrics(
+            app,
+            FrameMetrics {
+                status: app.frame_probe.status.clone(),
+                ..FrameMetrics::idle()
+            },
+        );
         return;
     }
 
@@ -747,10 +860,13 @@ fn start_frame_target(app: &mut App, process_name: String, app_id: Option<String
 
     maybe_refresh_frame_probe(app);
     if !frame_backend_ready(app) {
-        app.frame_metrics = FrameMetrics {
-            status: app.frame_probe.status.clone(),
-            ..FrameMetrics::idle()
-        };
+        apply_frame_metrics(
+            app,
+            FrameMetrics {
+                status: app.frame_probe.status.clone(),
+                ..FrameMetrics::idle()
+            },
+        );
         return;
     }
 
@@ -761,11 +877,14 @@ fn start_frame_target(app: &mut App, process_name: String, app_id: Option<String
     app.frame_target = Some(process_name.clone());
     app.frame_target_started_at = Some(Instant::now());
     app.frame_discovery_active = false;
-    app.frame_metrics = FrameMetrics {
-        process_name: Some(process_name.clone()),
-        status: format!("RTSS starting {process_name}"),
-        ..FrameMetrics::idle()
-    };
+    apply_frame_metrics(
+        app,
+        FrameMetrics {
+            process_name: Some(process_name.clone()),
+            status: format!("RTSS starting {process_name}"),
+            ..FrameMetrics::idle()
+        },
+    );
     app.frame_rx = Some(spawn_frame_capture(process_name));
     app.fps_history.clear();
 }
@@ -787,10 +906,13 @@ fn start_frame_discovery(app: &mut App, game: &SteamGame) {
     app.frame_target_started_at = None;
     app.frame_discovery_active = true;
     app.frame_discovery_failed_at = None;
-    app.frame_metrics = FrameMetrics {
-        status: format!("RTSS resolving {}", game.name),
-        ..FrameMetrics::idle()
-    };
+    apply_frame_metrics(
+        app,
+        FrameMetrics {
+            status: format!("RTSS resolving {}", game.name),
+            ..FrameMetrics::idle()
+        },
+    );
     app.frame_rx = Some(spawn_frame_discovery(discovery_exclusions()));
     app.fps_history.clear();
 }
@@ -801,7 +923,7 @@ fn stop_frame_monitor(app: &mut App) {
         && !app.frame_discovery_active
         && app.frame_metrics.samples == 0
     {
-        app.frame_metrics = FrameMetrics::idle();
+        apply_frame_metrics(app, FrameMetrics::idle());
         app.fps_history.clear();
         return;
     }
@@ -812,7 +934,7 @@ fn stop_frame_monitor(app: &mut App) {
     app.frame_discovery_active = false;
     app.frame_discovery_failed_at = None;
     app.frame_resolver.reset();
-    app.frame_metrics = FrameMetrics::idle();
+    apply_frame_metrics(app, FrameMetrics::idle());
     app.fps_history.clear();
 }
 
@@ -820,6 +942,8 @@ fn refresh_frame_probe(app: &mut App) {
     app.frame_probe = probe_frame_backend();
     app.frame_discovery_failed_at = None;
     app.last_frame_probe_refresh = Instant::now();
+    let status = app.frame_probe.status.clone();
+    record_frame_event(app, FrameEventKind::Probe, status);
 }
 
 fn toggle_overlay(app: &mut App) {
@@ -833,6 +957,8 @@ fn toggle_overlay(app: &mut App) {
     } else {
         OverlayStatus::disabled(app.config.overlay.backend)
     };
+    let status = app.overlay_status.message.clone();
+    record_frame_event(app, FrameEventKind::Overlay, status);
     app.last_overlay_sync = Instant::now() - app.config.overlay.update_rate;
     send_overlay_snapshot(app);
 }
@@ -1401,6 +1527,11 @@ fn start_auto_detected_session_with_log(app: &mut App, game: SteamGame, mut log:
     app.auto_session_ignore_app_id = None;
     app.session.start_detected(&game);
     app.auto_session_status = language.detected(&truncate(&game.name, 28));
+    record_frame_event(
+        app,
+        FrameEventKind::Session,
+        format!("Steam session active: {}", game.name),
+    );
     focus_frames_for_game(app);
     log.push(format!(
         "  {}: {} (#{})",
@@ -1610,6 +1741,11 @@ fn launch_steam_game_with_overdrive(app: &mut App, game: SteamGame) {
     app.auto_session_ignore_app_id = None;
     app.session.start(&game, true);
     app.auto_session_status = language.manual_session_active().to_string();
+    record_frame_event(
+        app,
+        FrameEventKind::Session,
+        format!("Steam session active: {}", game.name),
+    );
     focus_frames_for_game(app);
     log.push(format!("  \u{f017} {}", language.session_started()));
 
@@ -1644,6 +1780,11 @@ fn launch_steam_game_without_overdrive(app: &mut App, game: SteamGame) {
     app.auto_session_ignore_app_id = None;
     app.session.start(&game, false);
     app.auto_session_status = language.manual_session_active().to_string();
+    record_frame_event(
+        app,
+        FrameEventKind::Session,
+        format!("Steam session active: {}", game.name),
+    );
     focus_frames_for_game(app);
     log.push(format!("  \u{f017} {}", language.session_started()));
 
@@ -1655,6 +1796,11 @@ fn finish_active_session(app: &mut App) -> Vec<String> {
     let language = app.config.ui.language;
     let mut log = Vec::new();
     if let Some(session) = app.session.stop() {
+        record_frame_event(
+            app,
+            FrameEventKind::Session,
+            format!("Steam session ended: {}", session.name),
+        );
         let duration = format_duration(Duration::from_secs(session.seconds));
         app.session.last_completed = Some(language.completed_session_label(
             &session.name,
@@ -2182,5 +2328,33 @@ mod tests {
             KeyCode::F(12),
             KeyModifiers::NONE
         ));
+    }
+
+    #[test]
+    fn frame_event_log_should_deduplicate_adjacent_events() {
+        let mut log = FrameEventLog::default();
+
+        log.record(Duration::from_secs(1), FrameEventKind::Probe, "RTSS listo");
+        log.record(Duration::from_secs(2), FrameEventKind::Probe, "RTSS listo");
+
+        assert_eq!(log.iter().count(), 1);
+    }
+
+    #[test]
+    fn frame_event_log_should_keep_recent_entries() {
+        let mut log = FrameEventLog::default();
+
+        for index in 0..(FRAME_EVENT_LIMIT + 2) {
+            log.record(
+                Duration::from_secs(index as u64),
+                FrameEventKind::Capture,
+                format!("event {index}"),
+            );
+        }
+
+        let entries = log.iter().collect::<Vec<_>>();
+
+        assert_eq!(entries.len(), FRAME_EVENT_LIMIT);
+        assert_eq!(entries[0].message, "event 2");
     }
 }
