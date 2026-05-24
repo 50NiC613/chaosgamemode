@@ -1,0 +1,4 @@
+# Keep local TUI rebuilds snappy while iterating on Ratatui screens.
+[profile.dev]
+debug = "line-tables-only"
+incremental = true

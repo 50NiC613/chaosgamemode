@@ -44,7 +44,6 @@ $KillList = @(
     'idman*', 'qbittorrent*', 'torrent*', 'transmission*'
     'discord*', 'slack*', 'teams*', 'zoom*', 'skype*'
     'spotify*', 'apple*', 'itunes*'
-    'steelseries*', 'sonar*', 'gg*'
     'epomaker*', 'rapoo*', 'logitech*', 'razer*'
     'anydesk*', 'teamviewer*', 'rcclient*', 'rcservice*', 'anyviewer*', 'vnc*'
     'whatsapp*', 'telegram*', 'signal*'
@@ -56,9 +55,6 @@ $KillList = @(
     'opengameboost*', 'razercortex*'
     'foxit*', 'acrobat*', 'adobereader*'
     'snippingtool*', 'screenshot*', 'snip*'
-    'searchapp*', 'searchhost*', 'searchindexer*'
-    'startmenuexperiencehost*', 'shellexperiencehost*'
-    'runtimebroker*'
     'python*', 'node*', 'dotnet*'
 )
 

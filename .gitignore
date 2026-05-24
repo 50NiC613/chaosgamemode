@@ -1,5 +1,9 @@
 # Rust build artifacts
 tui-rs/target/
-tui-rs/Cargo.lock
+dist/
+.tools/
+.agents/
+skills-lock.json
+*.msi
 *.exe
 *.exe~

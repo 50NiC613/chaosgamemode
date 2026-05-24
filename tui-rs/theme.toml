@@ -1,0 +1,19 @@
+# Chaos Game Mode live theme
+# Change preset or edit colors while the TUI is open.
+# Presets: cyberpunk, hacker, gruvbox, tokyo-night, dracula, nord,
+#          solarized, everforest, kanagawa, rose-pine, one-dark, ayu, catppuccin.
+preset = "catppuccin"
+
+[colors]
+black = "#111217"
+panel = "#1e1f29"
+panel_dark = "#181921"
+foreground = "#cdd6f4"
+cyber_yellow = "#f9e2af"
+neon_cyan = "#94e2d5"
+neon_magenta = "#f5c2e7"
+hot_red = "#f38ba8"
+acid_green = "#a6e3a1"
+orange = "#fab387"
+blue = "#89b4fa"
+muted = "#9399b2"

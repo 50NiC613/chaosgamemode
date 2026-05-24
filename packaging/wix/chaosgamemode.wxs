@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product
+    Id="*"
+    Name="Chaos Game Mode"
+    Language="1033"
+    Version="$(var.Version)"
+    Manufacturer="Chaos Game Mode"
+    UpgradeCode="{8D3F3FB5-9546-4397-88F1-9DA73029B7D9}">
+
+    <Package
+      InstallerVersion="500"
+      Compressed="yes"
+      InstallScope="perUser"
+      Description="Chaos Game Mode TUI" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Chaos Game Mode is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="DISABLEADVTSHORTCUTS" Value="1" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="LocalProgramsFolder" Name="Programs">
+          <Directory Id="INSTALLFOLDER" Name="ChaosGameMode">
+            <Component Id="MainExecutable" Guid="{68F674E2-84CF-4D9C-A917-0597629E5950}">
+              <File
+                Id="ChaosGameModeExe"
+                Name="chaosgamemode.exe"
+                Source="$(var.PayloadDir)\chaosgamemode.exe"
+                KeyPath="yes" />
+            </Component>
+
+            <Component Id="DefaultConfig" Guid="{B6702C3A-303A-4EF3-A1B9-6E2906A710C8}" NeverOverwrite="yes">
+              <File
+                Id="ConfigToml"
+                Name="config.toml"
+                Source="$(var.PayloadDir)\config.toml"
+                KeyPath="yes" />
+            </Component>
+
+            <Component Id="DefaultTheme" Guid="{3316A2B9-4DE0-4F6C-A55E-A7B3A9DCA804}" NeverOverwrite="yes">
+              <File
+                Id="ThemeToml"
+                Name="theme.toml"
+                Source="$(var.PayloadDir)\theme.toml"
+                KeyPath="yes" />
+            </Component>
+
+            <Component Id="ReadmeFile" Guid="{BF89B2E3-BA8A-4609-909C-4D40CD0267C1}">
+              <File
+                Id="ReadmeMd"
+                Name="README.md"
+                Source="$(var.PayloadDir)\README.md"
+                KeyPath="yes" />
+            </Component>
+
+            <Component Id="UserPathEnvironment" Guid="{D837E351-D738-4B5C-A5F2-66817C1F2EE8}">
+              <RegistryValue
+                Root="HKCU"
+                Key="Software\ChaosGameMode"
+                Name="PathEnvironment"
+                Type="integer"
+                Value="1"
+                KeyPath="yes" />
+              <Environment
+                Id="AddInstallFolderToPath"
+                Name="PATH"
+                Value="[INSTALLFOLDER]"
+                Permanent="no"
+                Part="last"
+                Action="set"
+                System="no" />
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Feature Id="DefaultFeature" Title="Chaos Game Mode" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="DefaultConfig" />
+      <ComponentRef Id="DefaultTheme" />
+      <ComponentRef Id="ReadmeFile" />
+      <ComponentRef Id="UserPathEnvironment" />
+    </Feature>
+  </Product>
+</Wix>
