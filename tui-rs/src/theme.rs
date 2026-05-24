@@ -521,7 +521,32 @@ fn find_theme_file() -> Option<PathBuf> {
         candidates.push(exe_dir.join("theme.toml"));
     }
 
-    candidates.into_iter().find(|path| path.is_file())
+    if let Some(path) = candidates.into_iter().find(|path| path.is_file()) {
+        return Some(path);
+    }
+
+    seed_installed_theme()
+}
+
+fn seed_installed_theme() -> Option<PathBuf> {
+    let exe_path = std::env::current_exe().ok()?;
+    let exe_dir = exe_path.parent()?;
+    copy_default_file(
+        &exe_dir.join("theme.default.toml"),
+        &exe_dir.join("theme.toml"),
+    )
+}
+
+fn copy_default_file(default_path: &Path, target_path: &Path) -> Option<PathBuf> {
+    if target_path.exists() {
+        return target_path.is_file().then(|| target_path.to_path_buf());
+    }
+    if !default_path.is_file() {
+        return None;
+    }
+
+    fs::copy(default_path, target_path).ok()?;
+    target_path.is_file().then(|| target_path.to_path_buf())
 }
 
 fn parse_color(value: Option<&str>) -> Option<Color> {
@@ -650,5 +675,28 @@ mod tests {
         );
 
         fs::remove_file(path).expect("theme fixture should be removable");
+    }
+
+    #[test]
+    fn copy_default_file_should_seed_missing_theme() {
+        let dir =
+            std::env::temp_dir().join(format!("chaosgamemode-theme-seed-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("theme seed fixture dir should be writable");
+        let default_path = dir.join("theme.default.toml");
+        let target_path = dir.join("theme.toml");
+        fs::write(&default_path, "preset = \"gruvbox\"\n")
+            .expect("default theme fixture should be writable");
+
+        assert_eq!(
+            copy_default_file(&default_path, &target_path),
+            Some(target_path.clone())
+        );
+        assert_eq!(
+            fs::read_to_string(&target_path).expect("seeded theme should be readable"),
+            "preset = \"gruvbox\"\n"
+        );
+
+        fs::remove_dir_all(dir).expect("theme seed fixture dir should be removable");
     }
 }

@@ -154,6 +154,8 @@ The MSI installs:
 - `chaosgamemode.exe`
 - `config.toml`
 - `theme.toml`
+- `config.default.toml`
+- `theme.default.toml`
 - `README.md`
 - Start-menu shortcuts
 - user `PATH` entry for `%LOCALAPPDATA%\Programs\ChaosGameMode`
@@ -495,7 +497,7 @@ Local MSI builds are still supported:
 .\build-msi.ps1 -InstallWix
 ```
 
-The MSI build packages Chaos Game Mode, default config/theme files, and the README. RTSS is intentionally documented as an external requirement instead of being bundled inside the installer.
+The MSI build packages Chaos Game Mode, default config/theme files, fallback `*.default.toml` templates, and the README. RTSS is intentionally documented as an external requirement instead of being bundled inside the installer.
 
 Suggested manual release notes structure:
 

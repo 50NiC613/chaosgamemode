@@ -66,6 +66,34 @@
                 Source="$(var.PayloadDir)\theme.toml" />
             </Component>
 
+            <Component Id="ConfigTemplate" Guid="{0FBB59F1-A096-42E9-8912-07B83F7D1141}">
+              <RegistryValue
+                Root="HKCU"
+                Key="Software\ChaosGameMode\Components"
+                Name="ConfigTemplate"
+                Type="integer"
+                Value="1"
+                KeyPath="yes" />
+              <File
+                Id="ConfigDefaultToml"
+                Name="config.default.toml"
+                Source="$(var.PayloadDir)\config.toml" />
+            </Component>
+
+            <Component Id="ThemeTemplate" Guid="{27A9EC4D-41B3-42E2-A308-C60D692E9BA2}">
+              <RegistryValue
+                Root="HKCU"
+                Key="Software\ChaosGameMode\Components"
+                Name="ThemeTemplate"
+                Type="integer"
+                Value="1"
+                KeyPath="yes" />
+              <File
+                Id="ThemeDefaultToml"
+                Name="theme.default.toml"
+                Source="$(var.PayloadDir)\theme.toml" />
+            </Component>
+
             <Component Id="ReadmeFile" Guid="{BF89B2E3-BA8A-4609-909C-4D40CD0267C1}">
               <RegistryValue
                 Root="HKCU"
@@ -108,6 +136,8 @@
       <ComponentRef Id="MainExecutable" />
       <ComponentRef Id="DefaultConfig" />
       <ComponentRef Id="DefaultTheme" />
+      <ComponentRef Id="ConfigTemplate" />
+      <ComponentRef Id="ThemeTemplate" />
       <ComponentRef Id="ReadmeFile" />
       <ComponentRef Id="UserPathEnvironment" />
     </Feature>

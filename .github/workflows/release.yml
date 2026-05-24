@@ -115,6 +115,7 @@ jobs:
           - Standalone ``chaosgamemode.exe``
           - Default ``config.toml``
           - Default ``theme.toml``
+          - Fallback ``config.default.toml`` and ``theme.default.toml`` templates inside the MSI
 
           ### Notes
           - Steam is the current supported game platform.

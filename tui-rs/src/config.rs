@@ -664,7 +664,32 @@ fn find_config_file() -> Option<PathBuf> {
         candidates.push(exe_dir.join("config.toml"));
     }
 
-    candidates.into_iter().find(|path| path.is_file())
+    if let Some(path) = candidates.into_iter().find(|path| path.is_file()) {
+        return Some(path);
+    }
+
+    seed_installed_config()
+}
+
+fn seed_installed_config() -> Option<PathBuf> {
+    let exe_path = std::env::current_exe().ok()?;
+    let exe_dir = exe_path.parent()?;
+    copy_default_file(
+        &exe_dir.join("config.default.toml"),
+        &exe_dir.join("config.toml"),
+    )
+}
+
+fn copy_default_file(default_path: &Path, target_path: &Path) -> Option<PathBuf> {
+    if target_path.exists() {
+        return target_path.is_file().then(|| target_path.to_path_buf());
+    }
+    if !default_path.is_file() {
+        return None;
+    }
+
+    fs::copy(default_path, target_path).ok()?;
+    target_path.is_file().then(|| target_path.to_path_buf())
 }
 
 fn strings(values: &[&str]) -> Vec<String> {
@@ -915,5 +940,28 @@ mod tests {
         let mut profile = BoostProfile::balanced();
 
         assert!(profile.remove_hidden_pattern_for("securityhealthsystray"));
+    }
+
+    #[test]
+    fn copy_default_file_should_seed_missing_config() {
+        let dir =
+            std::env::temp_dir().join(format!("chaosgamemode-config-seed-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("config seed fixture dir should be writable");
+        let default_path = dir.join("config.default.toml");
+        let target_path = dir.join("config.toml");
+        fs::write(&default_path, "active_profile = \"balanced\"\n")
+            .expect("default config fixture should be writable");
+
+        assert_eq!(
+            copy_default_file(&default_path, &target_path),
+            Some(target_path.clone())
+        );
+        assert_eq!(
+            fs::read_to_string(&target_path).expect("seeded config should be readable"),
+            "active_profile = \"balanced\"\n"
+        );
+
+        fs::remove_dir_all(dir).expect("config seed fixture dir should be removable");
     }
 }
