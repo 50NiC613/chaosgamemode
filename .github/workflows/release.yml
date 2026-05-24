@@ -65,20 +65,20 @@ jobs:
 
       - name: Run tests
         working-directory: tui-rs
-        run: cargo test
+        run: cargo test --quiet
 
       - name: Run clippy
         working-directory: tui-rs
-        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+        run: cargo clippy --quiet --all-targets --all-features --locked -- -D warnings
 
       - name: Build release binary
         working-directory: tui-rs
-        run: cargo build --release --locked
+        run: cargo build --release --locked --quiet
 
       - name: Build MSI
         shell: pwsh
         run: |
-          .\build-msi.ps1 -SkipBuild -InstallWix -PackageVersion "${{ steps.meta.outputs.package_version }}"
+          .\build-msi.ps1 -SkipBuild -InstallWix -OutputDir "dist\msi" -PackageVersion "${{ steps.meta.outputs.package_version }}"
 
           New-Item -ItemType Directory -Force -Path dist\release | Out-Null
           Copy-Item `
@@ -118,7 +118,8 @@ jobs:
 
           ### Notes
           - Steam is the current supported game platform.
-          - PresentMon Console is optional and enables FPS, frametime, and 1% low metrics.
+          - The MSI bundles PresentMon Console for FPS, frametime, and 1% low metrics.
+          - The standalone exe can use PresentMon from config, environment, WinGet, or PATH.
           - UI language is configured in ``config.toml`` under ``[ui] language = "es"`` or ``"en"``.
           "@
           $notes | Set-Content -Path dist\release-notes.md -Encoding UTF8

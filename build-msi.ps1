@@ -35,11 +35,23 @@ function Write-Step {
     Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
+function Get-DisplayPath {
+    param([string]$Path)
+
+    $full = [System.IO.Path]::GetFullPath($Path)
+    $root = [System.IO.Path]::GetFullPath($ProjectRoot)
+    if ($full.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $full.Substring($root.Length).TrimStart('\', '/')
+    }
+
+    return Split-Path -Leaf $full
+}
+
 function Get-CargoVersion {
     $contents = Get-Content -Raw -Path $CargoToml
     $match = [regex]::Match($contents, '(?m)^\s*version\s*=\s*"([^"]+)"')
     if (-not $match.Success) {
-        throw "No se pudo leer version desde $CargoToml"
+        throw "No se pudo leer version desde tui-rs\Cargo.toml"
     }
 
     return $match.Groups[1].Value
@@ -155,7 +167,8 @@ function Install-Wix4Toolset {
 function Invoke-Wix4 {
     param(
         [string]$WixExe,
-        [string[]]$Arguments
+        [string[]]$Arguments,
+        [int[]]$AllowedExitCodes = @(0)
     )
 
     $dotnet = Get-DotNetCommand
@@ -165,7 +178,12 @@ function Invoke-Wix4 {
         $env:PATH = "$dotnetRoot;$env:PATH"
     }
 
-    & $WixExe @Arguments
+    $output = & $WixExe @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+    $output
+    if ($AllowedExitCodes -notcontains $exitCode) {
+        throw "WiX command failed: wix $($Arguments[0])"
+    }
 }
 
 function Get-InstalledPresentMonConsolePath {
@@ -195,7 +213,7 @@ function Get-InstalledPresentMonConsolePath {
 function Get-PresentMonConsoleForPayload {
     $installed = Get-InstalledPresentMonConsolePath
     if ($installed) {
-        Write-Step "Usando PresentMon Console detectado: $installed"
+        Write-Step "Usando PresentMon Console detectado para el payload"
         return $installed
     }
 
@@ -261,10 +279,10 @@ function Clear-DirectoryInside {
 }
 
 if (-not (Test-Path $CargoProject)) {
-    throw "No se encontro el proyecto Rust en: $CargoProject"
+    throw "No se encontro el proyecto Rust en tui-rs"
 }
 if (-not (Test-Path $Wxs)) {
-    throw "No se encontro la plantilla WiX en: $Wxs"
+    throw "No se encontro la plantilla WiX en packaging\wix\chaosgamemode.wxs"
 }
 
 if (-not $SkipBuild) {
@@ -278,7 +296,7 @@ if (-not $SkipBuild) {
 }
 
 if (-not (Test-Path $ReleaseExe)) {
-    throw "No se encontro el binario release: $ReleaseExe"
+    throw "No se encontro el binario release en tui-rs\target\release\chaosgamemode.exe"
 }
 
 $version = if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
@@ -319,8 +337,13 @@ $msi = Join-Path $OutputDir "ChaosGameMode-$version-x64.msi"
 
 if ($wix) {
     Write-Step "Compilando WiX v3"
-    & $wix.Candle -nologo -arch x64 "-dPayloadDir=$PayloadDir" "-dVersion=$version" -out $wixobj $Wxs
-    & $wix.Light -nologo -out $msi $wixobj
+    Push-Location $ProjectRoot
+    try {
+        & $wix.Candle -nologo -arch x64 "-dPayloadDir=$PayloadDir" "-dVersion=$version" -out $wixobj "packaging\wix\chaosgamemode.wxs"
+        & $wix.Light -nologo -out $msi $wixobj
+    } finally {
+        Pop-Location
+    }
 } else {
     if (-not $wix4) {
         throw "WiX Toolset no esta instalado. Ejecuta: .\build-msi.ps1 -InstallWix"
@@ -328,23 +351,30 @@ if ($wix) {
 
     Write-Step "Compilando WiX v4"
     $wix4Source = Join-Path $OutputDir "chaosgamemode.v4.wxs"
+    $wix4SourceDisplay = Get-DisplayPath $wix4Source
     Copy-Item -Path $Wxs -Destination $wix4Source -Force
-    Invoke-Wix4 -WixExe $wix4 -Arguments @("convert", $wix4Source)
-    Invoke-Wix4 -WixExe $wix4 -Arguments @(
-        "build",
-        $wix4Source,
-        "-arch",
-        "x64",
-        "-d",
-        "PayloadDir=$PayloadDir",
-        "-d",
-        "Version=$version",
-        "-out",
-        $msi
-    )
+    Push-Location $ProjectRoot
+    try {
+        Invoke-Wix4 -WixExe $wix4 -Arguments @("convert", $wix4SourceDisplay) -AllowedExitCodes @(0, 6) | Where-Object { $_ -notmatch 'information WIX' }
+        Invoke-Wix4 -WixExe $wix4 -Arguments @(
+            "build",
+            $wix4SourceDisplay,
+            "-arch",
+            "x64",
+            "-d",
+            "PayloadDir=$PayloadDir",
+            "-d",
+            "Version=$version",
+            "-out",
+            (Get-DisplayPath $msi)
+        )
+    } finally {
+        Pop-Location
+    }
 }
 
 Write-Host ""
-Write-Host "MSI generado: $msi" -ForegroundColor Green
-Write-Host "Instalar:     msiexec /i `"$msi`""
-Write-Host "Desinstalar:  desde Configuracion > Apps o msiexec /x `"$msi`""
+$msiDisplay = Get-DisplayPath $msi
+Write-Host "MSI generado: $msiDisplay" -ForegroundColor Green
+Write-Host "Instalar:     msiexec /i `"$msiDisplay`""
+Write-Host "Desinstalar:  desde Configuracion > Apps o msiexec /x `"$msiDisplay`""
