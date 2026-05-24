@@ -1004,6 +1004,60 @@ fn render_frames_session_panel(frame: &mut Frame, app: &App, area: Rect) {
 fn render_frames_metrics_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
     let lang = app.config.ui.language;
+
+    if !app.has_frame_samples() {
+        let status = if app.frame_resolution_active() {
+            lang.frames_resolving_target()
+        } else if app.frame_capture_active() {
+            lang.frames_waiting_samples()
+        } else if app.presentmon_probe.path.is_some() {
+            lang.frames_capture_armed()
+        } else {
+            lang.frames_idle_status()
+        };
+        let lines = vec![
+            Line::from(vec![
+                metric_label(theme, lang.label_capture()),
+                Span::styled(status, Style::new().fg(theme.cyber_yellow)),
+            ]),
+            Line::from(vec![
+                metric_label(theme, lang.label_target()),
+                Span::styled(
+                    app.frame_metrics
+                        .process_name
+                        .as_deref()
+                        .unwrap_or(lang.no_target()),
+                    Style::new().fg(theme.muted),
+                ),
+            ]),
+            Line::from(vec![
+                metric_label(theme, lang.label_status()),
+                Span::styled(
+                    crate::metrics::truncate(
+                        &localized_frame_status(&app.frame_metrics.status, lang),
+                        46,
+                    ),
+                    Style::new().fg(theme.muted),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  ", Style::new()),
+                Span::styled(lang.frames_idle_hint(), Style::new().fg(theme.muted)),
+            ]),
+        ];
+
+        let panel = Paragraph::new(Text::from(lines))
+            .block(accent_block(
+                theme,
+                lang.panel_frames_idle(),
+                theme.neon_cyan,
+            ))
+            .wrap(Wrap { trim: true });
+        frame.render_widget(panel, area);
+        return;
+    }
+
     let lines = vec![
         Line::from(vec![
             metric_label(theme, "FPS"),
@@ -1075,10 +1129,90 @@ fn render_frames_metrics_panel(frame: &mut Frame, app: &App, area: Rect) {
 fn render_frames_trace_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
     let lang = app.config.ui.language;
-    let fps_history = scaled_history(&app.fps_history);
     let gpu_history = scaled_history(&app.gpu_history);
     let cpu_history = scaled_history(&app.cpu_history);
     let ram_history = scaled_history(&app.ram_history);
+
+    if !app.has_frame_samples() {
+        let rows = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(5),
+                Constraint::Percentage(34),
+                Constraint::Percentage(33),
+                Constraint::Percentage(33),
+            ])
+            .split(area);
+
+        let status = if app.frame_resolution_active() {
+            lang.frames_resolving_target()
+        } else if app.frame_capture_active() {
+            lang.frames_waiting_samples()
+        } else {
+            lang.frames_idle_status()
+        };
+        let lines = vec![
+            Line::from(vec![
+                metric_label(theme, lang.label_capture()),
+                Span::styled(status, Style::new().fg(theme.muted)),
+            ]),
+            Line::from(vec![
+                Span::styled("  ", Style::new()),
+                Span::styled(lang.frames_idle_hint(), Style::new().fg(theme.muted)),
+            ]),
+        ];
+        frame.render_widget(
+            Paragraph::new(Text::from(lines))
+                .block(accent_block(theme, lang.panel_frames_idle(), theme.muted))
+                .wrap(Wrap { trim: true }),
+            rows[0],
+        );
+        render_scaled_trace(
+            frame,
+            app,
+            rows[1],
+            format!(
+                "GPU {} / {}-{}%",
+                lang.trace_title(),
+                gpu_history.min,
+                gpu_history.max
+            ),
+            &gpu_history.values,
+            100,
+            theme.orange,
+        );
+        render_scaled_trace(
+            frame,
+            app,
+            rows[2],
+            format!(
+                "CPU {} / {}-{}%",
+                lang.trace_title(),
+                cpu_history.min,
+                cpu_history.max
+            ),
+            &cpu_history.values,
+            100,
+            theme.blue,
+        );
+        render_scaled_trace(
+            frame,
+            app,
+            rows[3],
+            format!(
+                "RAM {} / {}-{}%",
+                lang.trace_title(),
+                ram_history.min,
+                ram_history.max
+            ),
+            &ram_history.values,
+            100,
+            theme.neon_magenta,
+        );
+        return;
+    }
+
+    let fps_history = scaled_history(&app.fps_history);
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -1156,6 +1290,25 @@ fn render_frames_trace_panel(frame: &mut Frame, app: &App, area: Rect) {
             .max(100)
             .style(Style::new().fg(theme.neon_magenta).bg(theme.panel)),
         rows[3],
+    );
+}
+
+fn render_scaled_trace(
+    frame: &mut Frame,
+    app: &App,
+    area: Rect,
+    title: String,
+    values: &[u64],
+    max: u64,
+    color: ratatui::style::Color,
+) {
+    frame.render_widget(
+        Sparkline::default()
+            .block(accent_block(&app.theme, title, color))
+            .data(values.iter().copied())
+            .max(max)
+            .style(Style::new().fg(color).bg(app.theme.panel)),
+        area,
     );
 }
 
@@ -1559,7 +1712,7 @@ fn render_system_graphics_panel(frame: &mut Frame, app: &App, area: Rect) {
         .hardware
         .gpu_vram_used_pct()
         .map_or(theme.muted, |value| metric_color(theme, value));
-    let lines = vec![
+    let mut lines = vec![
         Line::from(vec![
             metric_label(theme, lang.label_gpu_load()),
             metric_value(
@@ -1590,51 +1743,71 @@ fn render_system_graphics_panel(frame: &mut Frame, app: &App, area: Rect) {
                 system_temp_color(theme, app.state.hardware.cpu_temp_c),
             ),
         ]),
-        Line::from(vec![
-            metric_label(theme, "FPS"),
-            metric_value(format_frame_fps(app.frame_metrics.fps), theme.cyber_yellow),
-            Span::styled(
-                format!("  {} ", lang.label_average()),
-                Style::new().fg(theme.muted),
-            ),
-            metric_value(
-                format_frame_fps(app.frame_metrics.average_fps),
-                theme.acid_green,
-            ),
-        ]),
-        Line::from(vec![
-            metric_label(theme, "1% LOW"),
-            metric_value(format_frame_fps(app.frame_metrics.low_1_fps), theme.hot_red),
-            Span::styled(
-                format!("  {} ", lang.label_frame()),
-                Style::new().fg(theme.muted),
-            ),
-            metric_value(
-                format_frame_ms(app.frame_metrics.frame_time_ms),
-                theme.neon_cyan,
-            ),
-        ]),
-        Line::from(vec![
-            metric_label(theme, lang.label_samples()),
-            metric_value(app.frame_metrics.samples.to_string(), theme.cyber_yellow),
-        ]),
-        Line::from(vec![
-            metric_label(theme, "TARGET"),
-            Span::styled(
-                crate::metrics::truncate(
-                    app.frame_metrics
-                        .process_name
-                        .as_deref()
-                        .unwrap_or(lang.no_target()),
-                    34,
+    ];
+
+    if app.has_frame_samples() {
+        lines.extend([
+            Line::from(vec![
+                metric_label(theme, "FPS"),
+                metric_value(format_frame_fps(app.frame_metrics.fps), theme.cyber_yellow),
+                Span::styled(
+                    format!("  {} ", lang.label_average()),
+                    Style::new().fg(theme.muted),
                 ),
-                Style::new().fg(if app.frame_metrics.fps.is_some() {
-                    theme.acid_green
-                } else {
-                    theme.muted
-                }),
-            ),
-        ]),
+                metric_value(
+                    format_frame_fps(app.frame_metrics.average_fps),
+                    theme.acid_green,
+                ),
+            ]),
+            Line::from(vec![
+                metric_label(theme, "1% LOW"),
+                metric_value(format_frame_fps(app.frame_metrics.low_1_fps), theme.hot_red),
+                Span::styled(
+                    format!("  {} ", lang.label_frame()),
+                    Style::new().fg(theme.muted),
+                ),
+                metric_value(
+                    format_frame_ms(app.frame_metrics.frame_time_ms),
+                    theme.neon_cyan,
+                ),
+            ]),
+            Line::from(vec![
+                metric_label(theme, lang.label_samples()),
+                metric_value(app.frame_metrics.samples.to_string(), theme.cyber_yellow),
+            ]),
+            Line::from(vec![
+                metric_label(theme, "TARGET"),
+                Span::styled(
+                    crate::metrics::truncate(
+                        app.frame_metrics
+                            .process_name
+                            .as_deref()
+                            .unwrap_or(lang.no_target()),
+                        34,
+                    ),
+                    Style::new().fg(if app.frame_metrics.fps.is_some() {
+                        theme.acid_green
+                    } else {
+                        theme.muted
+                    }),
+                ),
+            ]),
+        ]);
+    } else {
+        let status = if app.frame_resolution_active() {
+            lang.frames_resolving_target()
+        } else if app.frame_capture_active() {
+            lang.frames_waiting_samples()
+        } else {
+            lang.frames_idle_status()
+        };
+        lines.push(Line::from(vec![
+            metric_label(theme, lang.label_frames()),
+            Span::styled(status, Style::new().fg(theme.muted)),
+        ]));
+    }
+
+    lines.extend([
         Line::from(vec![
             metric_label(theme, lang.label_sensors()),
             Span::styled(
@@ -1655,7 +1828,7 @@ fn render_system_graphics_panel(frame: &mut Frame, app: &App, area: Rect) {
                 Style::new().fg(theme.muted),
             ),
         ]),
-    ];
+    ]);
 
     let panel = Paragraph::new(Text::from(lines))
         .block(accent_block(theme, "GPU / FRAMES", theme.orange))

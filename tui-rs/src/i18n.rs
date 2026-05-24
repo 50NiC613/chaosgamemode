@@ -1449,6 +1449,48 @@ impl Language {
         }
     }
 
+    pub(crate) const fn panel_frames_idle(self) -> &'static str {
+        match self {
+            Self::Spanish => "FRAMES IDLE",
+            Self::English => "FRAMES IDLE",
+        }
+    }
+
+    pub(crate) const fn frames_idle_status(self) -> &'static str {
+        match self {
+            Self::Spanish => "sin game activo",
+            Self::English => "no active game",
+        }
+    }
+
+    pub(crate) const fn frames_capture_armed(self) -> &'static str {
+        match self {
+            Self::Spanish => "capture armado",
+            Self::English => "capture armed",
+        }
+    }
+
+    pub(crate) const fn frames_waiting_samples(self) -> &'static str {
+        match self {
+            Self::Spanish => "esperando samples",
+            Self::English => "waiting for samples",
+        }
+    }
+
+    pub(crate) const fn frames_resolving_target(self) -> &'static str {
+        match self {
+            Self::Spanish => "detectando proceso del game",
+            Self::English => "resolving game process",
+        }
+    }
+
+    pub(crate) const fn frames_idle_hint(self) -> &'static str {
+        match self {
+            Self::Spanish => "Lanza un game de Steam; FPS arranca solo.",
+            Self::English => "Launch a Steam game; FPS capture starts automatically.",
+        }
+    }
+
     pub(crate) const fn panel_presentmon(self) -> &'static str {
         "PRESENTMON"
     }

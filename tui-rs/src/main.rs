@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod game_resolver;
 mod hardware;
 mod history;
 mod i18n;

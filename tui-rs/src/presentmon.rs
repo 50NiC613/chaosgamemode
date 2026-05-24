@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -130,6 +130,22 @@ pub(crate) fn spawn_frame_capture(
     rx
 }
 
+pub(crate) fn spawn_frame_discovery(
+    configured_exe: Option<PathBuf>,
+    excludes: Vec<String>,
+) -> Receiver<FrameMetrics> {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let result = run_frame_discovery(configured_exe.as_deref(), &excludes, |metrics| {
+            tx.send(metrics).is_ok()
+        });
+        if let Err(message) = result {
+            let _ = tx.send(FrameMetrics::unavailable(message));
+        }
+    });
+    rx
+}
+
 fn run_frame_capture(
     process_name: &str,
     configured_exe: Option<&Path>,
@@ -169,6 +185,70 @@ fn run_frame_capture(
 
     let reader = BufReader::new(stdout);
     let mut parser = PresentMonParser::new(process_name);
+    for line in reader.lines() {
+        let line = match line {
+            Ok(line) => line,
+            Err(err) => {
+                let _ = child.kill();
+                return Err(format!("PresentMon read error: {err}"));
+            }
+        };
+
+        if let Some(metrics) = parser.push_line(&line)
+            && !publish(metrics)
+        {
+            let _ = child.kill();
+            return Ok(());
+        }
+    }
+
+    let _ = child.wait();
+    Ok(())
+}
+
+fn run_frame_discovery(
+    configured_exe: Option<&Path>,
+    excludes: &[String],
+    mut publish: impl FnMut(FrameMetrics) -> bool,
+) -> Result<(), String> {
+    let probe = probe_presentmon(configured_exe);
+    let Some(exe) = probe.path else {
+        return Err("PresentMon no encontrado; configura integrations.presentmon_exe".to_string());
+    };
+    if !exe.is_file() {
+        return Err(format!("PresentMon path invalido: {}", exe.display()));
+    };
+
+    let mut command = Command::new(&exe);
+    command.args([
+        "--output_stdout",
+        "--v2_metrics",
+        "--exclude_dropped",
+        "--no_console_stats",
+        "--timed",
+        "15",
+        "--terminate_after_timed",
+        "--session_name",
+        "ChaosGameMode-discovery",
+        "--stop_existing_session",
+    ]);
+    for exclude in excludes {
+        command.args(["--exclude", exclude]);
+    }
+
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|err| format!("PresentMon launch error: {err}"))?;
+
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        return Err("PresentMon no entrego stdout".to_string());
+    };
+
+    let reader = BufReader::new(stdout);
+    let mut parser = PresentMonDiscoveryParser::default();
     for line in reader.lines() {
         let line = match line {
             Ok(line) => line,
@@ -279,8 +359,36 @@ impl PresentMonParser {
     }
 }
 
+#[derive(Default)]
+struct PresentMonDiscoveryParser {
+    header: Option<CsvHeader>,
+    windows: HashMap<String, FrameWindow>,
+}
+
+impl PresentMonDiscoveryParser {
+    fn push_line(&mut self, line: &str) -> Option<FrameMetrics> {
+        let fields = split_csv_line(line);
+        if fields.len() < 2 {
+            return None;
+        }
+
+        if CsvHeader::looks_like_header(&fields) {
+            self.header = CsvHeader::from_fields(&fields);
+            return None;
+        }
+
+        let header = self.header.as_ref()?;
+        let process_name = header.process_name_from_fields(&fields)?.to_string();
+        let sample = header.sample_from_fields(&fields)?;
+        let window = self.windows.entry(process_name.clone()).or_default();
+        window.push(sample.frame_time_ms);
+        Some(window.metrics(&process_name))
+    }
+}
+
 #[derive(Clone)]
 struct CsvHeader {
+    application_index: Option<usize>,
     frame_time_index: usize,
 }
 
@@ -298,11 +406,20 @@ impl CsvHeader {
     }
 
     fn from_fields(fields: &[String]) -> Option<Self> {
+        let application_index = column_index(fields, &["application"]);
         let frame_time_index = column_index(
             fields,
             &["msbetweenappstart", "msbetweenpresents", "displayedtime"],
         )?;
-        Some(Self { frame_time_index })
+        Some(Self {
+            application_index,
+            frame_time_index,
+        })
+    }
+
+    fn process_name_from_fields<'a>(&self, fields: &'a [String]) -> Option<&'a str> {
+        let value = fields.get(self.application_index?)?.trim();
+        (!value.is_empty()).then_some(value)
     }
 
     fn sample_from_fields(&self, fields: &[String]) -> Option<FrameSample> {
@@ -484,5 +601,17 @@ mod tests {
             .expect("sample should parse");
 
         assert_eq!(sample.frame_time_ms, 20.0);
+    }
+
+    #[test]
+    fn discovery_parser_should_report_application_name() {
+        let mut parser = PresentMonDiscoveryParser::default();
+        parser.push_line("Application,ProcessID,MsBetweenAppStart");
+        let metrics = parser
+            .push_line("Cyberpunk2077.exe,42,16.6667")
+            .expect("frame should produce metrics");
+
+        assert_eq!(metrics.process_name.as_deref(), Some("Cyberpunk2077.exe"));
+        assert!(metrics.fps.is_some_and(|fps| (fps - 60.0).abs() < 0.01));
     }
 }

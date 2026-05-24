@@ -141,7 +141,7 @@ fn render_gpu_panel(frame: &mut Frame, app: &App, area: Rect) {
         theme.muted
     };
 
-    let lines = vec![
+    let mut lines = vec![
         Line::from(vec![
             metric_label(theme, lang.label_load()),
             metric_value(format_optional_pct(hardware.gpu_load_pct), color),
@@ -160,14 +160,31 @@ fn render_gpu_panel(frame: &mut Frame, app: &App, area: Rect) {
                 temp_color(theme, hardware.cpu_temp_c),
             ),
         ]),
-        Line::from(vec![
+    ];
+
+    if app.has_frame_samples() {
+        lines.push(Line::from(vec![
             metric_label(theme, "FPS"),
             metric_value(format_fps(app.frame_metrics.fps), theme.cyber_yellow),
             Span::styled("  1%L ", Style::new().fg(theme.muted)),
             metric_value(format_fps(app.frame_metrics.low_1_fps), theme.hot_red),
-        ]),
-        bar_line(theme, pct, metric_bar_width(area), color),
-    ];
+        ]));
+    } else {
+        let frame_status = if app.frame_resolution_active() {
+            lang.frames_resolving_target()
+        } else if app.frame_capture_active() {
+            lang.frames_waiting_samples()
+        } else {
+            lang.frames_idle_status()
+        };
+        lines.push(Line::from(vec![
+            metric_label(theme, lang.label_frames()),
+            Span::styled(frame_status, Style::new().fg(theme.muted)),
+        ]));
+    }
+
+    lines.push(bar_line(theme, pct, metric_bar_width(area), color));
+
     frame.render_widget(
         Paragraph::new(Text::from(lines)).block(accent_block(theme, "GPU", theme.orange)),
         area,
@@ -325,23 +342,27 @@ fn render_history_panel(frame: &mut Frame, app: &App, area: Rect) {
             .style(Style::new().fg(theme.blue).bg(theme.panel)),
         rows[0],
     );
-    frame.render_widget(
-        Sparkline::default()
-            .block(accent_block(
-                theme,
-                format!(
-                    "FPS {} / {}-{}",
-                    lang.trace_title(),
-                    fps_history.min,
-                    fps_history.max
-                ),
-                theme.cyber_yellow,
-            ))
-            .data(fps_history.values.iter().copied())
-            .max(240)
-            .style(Style::new().fg(theme.cyber_yellow).bg(theme.panel)),
-        rows[1],
-    );
+    if app.has_frame_samples() {
+        frame.render_widget(
+            Sparkline::default()
+                .block(accent_block(
+                    theme,
+                    format!(
+                        "FPS {} / {}-{}",
+                        lang.trace_title(),
+                        fps_history.min,
+                        fps_history.max
+                    ),
+                    theme.cyber_yellow,
+                ))
+                .data(fps_history.values.iter().copied())
+                .max(240)
+                .style(Style::new().fg(theme.cyber_yellow).bg(theme.panel)),
+            rows[1],
+        );
+    } else {
+        render_frames_idle_panel(frame, app, rows[1]);
+    }
     frame.render_widget(
         Sparkline::default()
             .block(accent_block(
@@ -393,6 +414,38 @@ fn render_history_panel(frame: &mut Frame, app: &App, area: Rect) {
             .max(100)
             .style(Style::new().fg(theme.hot_red).bg(theme.panel)),
         rows[4],
+    );
+}
+
+fn render_frames_idle_panel(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = &app.theme;
+    let lang = app.config.ui.language;
+    let status = if app.frame_resolution_active() {
+        lang.frames_resolving_target()
+    } else if app.frame_capture_active() {
+        lang.frames_waiting_samples()
+    } else if app.presentmon_probe.path.is_some() {
+        lang.frames_capture_armed()
+    } else {
+        lang.frames_idle_status()
+    };
+
+    let lines = vec![
+        Line::from(vec![
+            metric_label(theme, lang.label_capture()),
+            Span::styled(status, Style::new().fg(theme.muted)),
+        ]),
+        Line::from(vec![
+            Span::styled("  ", Style::new()),
+            Span::styled(lang.frames_idle_hint(), Style::new().fg(theme.muted)),
+        ]),
+    ];
+
+    frame.render_widget(
+        Paragraph::new(Text::from(lines))
+            .block(accent_block(theme, lang.panel_frames_idle(), theme.muted))
+            .wrap(Wrap { trim: true }),
+        area,
     );
 }
 

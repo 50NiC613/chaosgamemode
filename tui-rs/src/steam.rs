@@ -120,6 +120,7 @@ impl SteamLibrary {
             .max_by_key(|running| running.exe_path.len())
     }
 
+    #[cfg(test)]
     pub(crate) fn running_process_for_app(
         &self,
         app_id: &str,

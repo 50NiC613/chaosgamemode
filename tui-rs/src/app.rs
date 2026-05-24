@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -16,13 +17,16 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use sysinfo::System;
 
 use crate::config::{AppConfig, BoostProfile, TelemetryConfig};
+use crate::game_resolver::{GameProcessResolver, discovery_exclusions, is_rejected_process};
 use crate::history;
 use crate::i18n::Language;
 use crate::metrics::{
     format_duration, percent_from_f32, push_history, sorted_filtered_hidden_processes,
     sorted_filtered_observed_processes, truncate,
 };
-use crate::presentmon::{FrameMetrics, PresentMonProbe, probe_presentmon, spawn_frame_capture};
+use crate::presentmon::{
+    FrameMetrics, PresentMonProbe, probe_presentmon, spawn_frame_capture, spawn_frame_discovery,
+};
 use crate::steam::{
     CompletedSession, SessionState, SteamGame, SteamLibrary, SteamScanResult, install_steam_game,
     launch_steam_game, open_steam_downloads, open_steam_game_properties, spawn_steam_scan,
@@ -178,6 +182,11 @@ pub(crate) struct App {
     telemetry_rx: Receiver<SystemState>,
     frame_rx: Option<Receiver<FrameMetrics>>,
     frame_target: Option<String>,
+    frame_target_started_at: Option<Instant>,
+    frame_discovery_active: bool,
+    frame_discovery_failed_at: Option<Instant>,
+    frame_resolver: GameProcessResolver,
+    learned_frame_targets: HashMap<String, String>,
     pub(crate) frame_metrics: FrameMetrics,
     pub(crate) presentmon_probe: PresentMonProbe,
     pub(crate) steam: SteamLibrary,
@@ -204,6 +213,20 @@ pub(crate) struct App {
 }
 
 impl App {
+    pub(crate) fn has_frame_samples(&self) -> bool {
+        self.frame_metrics.fps.is_some() || self.frame_metrics.samples > 0
+    }
+
+    pub(crate) fn frame_capture_active(&self) -> bool {
+        self.frame_target.is_some()
+            || self.frame_metrics.process_name.is_some()
+            || self.session.active.is_some()
+    }
+
+    pub(crate) const fn frame_resolution_active(&self) -> bool {
+        self.frame_discovery_active
+    }
+
     pub(crate) fn visible_processes(&self) -> Vec<(&String, &ProcessGroup)> {
         if self.show_hidden_processes {
             sorted_filtered_hidden_processes(&self.state, &self.process_filter)
@@ -263,6 +286,11 @@ pub(crate) fn run() -> io::Result<()> {
         telemetry_rx,
         frame_rx: None,
         frame_target: None,
+        frame_target_started_at: None,
+        frame_discovery_active: false,
+        frame_discovery_failed_at: None,
+        frame_resolver: GameProcessResolver::default(),
+        learned_frame_targets: HashMap::new(),
         frame_metrics: FrameMetrics::idle(),
         presentmon_probe,
         steam: SteamLibrary::loading(),
@@ -436,53 +464,267 @@ fn drain_steam_scan(app: &mut App) {
 
 fn drain_frame_metrics(app: &mut App) {
     let mut metrics = Vec::new();
+    let mut disconnected = false;
     if let Some(rx) = &app.frame_rx {
-        while let Ok(metric) = rx.try_recv() {
-            metrics.push(metric);
+        loop {
+            match rx.try_recv() {
+                Ok(metric) => metrics.push(metric),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    disconnected = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if disconnected {
+        app.frame_rx = None;
+        if app.frame_discovery_active {
+            app.frame_discovery_active = false;
         }
     }
 
     for metric in metrics {
-        let fps = metric
-            .fps
-            .map(|fps| fps.round().clamp(0.0, 999.0) as u64)
-            .unwrap_or(0);
+        if app.frame_discovery_active && app.frame_target.is_none() {
+            drain_discovery_metric(app, metric);
+        } else if frame_metric_matches_target(app, &metric) {
+            let fps = metric
+                .fps
+                .map(|fps| fps.round().clamp(0.0, 999.0) as u64)
+                .unwrap_or(0);
+            app.frame_metrics = metric;
+            push_history(&mut app.fps_history, fps);
+        }
+    }
+}
+
+fn drain_discovery_metric(app: &mut App, metric: FrameMetrics) {
+    if metric.process_name.is_none() {
+        app.frame_discovery_active = false;
+        app.frame_discovery_failed_at = Some(Instant::now());
+        app.frame_rx = None;
         app.frame_metrics = metric;
-        push_history(&mut app.fps_history, fps);
+        return;
+    }
+
+    let Some(game) = active_steam_game(app).cloned() else {
+        return;
+    };
+
+    if let Some(process_name) = app.frame_resolver.observe_frame(&metric, &game, &app.state) {
+        start_frame_target(app, process_name, Some(game.app_id));
+        return;
+    }
+
+    if let Some(best) = app.frame_resolver.best() {
+        app.frame_metrics = FrameMetrics {
+            process_name: Some(best.process_name.clone()),
+            status: format!("PresentMon probing {}", best.process_name),
+            ..FrameMetrics::idle()
+        };
+    }
+}
+
+fn frame_metric_matches_target(app: &App, metric: &FrameMetrics) -> bool {
+    match (&app.frame_target, metric.process_name.as_deref()) {
+        (Some(target), Some(process_name)) => target.eq_ignore_ascii_case(process_name),
+        (Some(_), None) => true,
+        (None, _) => true,
     }
 }
 
 fn sync_frame_monitor(app: &mut App) {
-    let target = app
-        .session
-        .active_app_id()
-        .and_then(|app_id| app.steam.running_process_for_app(app_id, &app.state))
-        .map(|running| running.process_name);
+    let Some(app_id) = app.session.active_app_id().map(ToOwned::to_owned) else {
+        stop_frame_monitor(app);
+        return;
+    };
 
-    if target == app.frame_target {
+    let Some(game) = active_steam_game(app).cloned() else {
+        stop_frame_monitor(app);
+        return;
+    };
+
+    if !app.frame_resolver.is_active_for(&app_id) {
+        app.frame_resolver.start(&game, &app.state);
+        app.frame_target = None;
+        app.frame_discovery_active = false;
+        app.frame_discovery_failed_at = None;
+        app.frame_rx = None;
+        app.frame_metrics = FrameMetrics {
+            status: format!("PresentMon resolving {}", game.name),
+            ..FrameMetrics::idle()
+        };
+        app.fps_history.clear();
+    }
+
+    if let Some(target) = app.frame_target.clone() {
+        if process_is_running(&app.state, &target) {
+            if frame_target_is_stale(app) {
+                app.frame_resolver.block_process(&target);
+                if app
+                    .learned_frame_targets
+                    .get(&app_id)
+                    .is_some_and(|learned| learned.eq_ignore_ascii_case(&target))
+                {
+                    app.learned_frame_targets.remove(&app_id);
+                }
+                app.frame_target = None;
+                app.frame_target_started_at = None;
+                app.frame_rx = None;
+                app.frame_metrics = FrameMetrics {
+                    status: format!("PresentMon resolving {}", game.name),
+                    ..FrameMetrics::idle()
+                };
+                app.fps_history.clear();
+            } else {
+                return;
+            }
+        } else {
+            app.frame_target = None;
+            app.frame_target_started_at = None;
+            app.frame_rx = None;
+            app.frame_metrics = FrameMetrics {
+                status: format!("PresentMon resolving {}", game.name),
+                ..FrameMetrics::idle()
+            };
+            app.fps_history.clear();
+        }
+    }
+
+    if let Some(process_name) = app.learned_frame_targets.get(&app_id).cloned()
+        && process_is_running(&app.state, &process_name)
+        && !is_rejected_process(&process_name)
+    {
+        start_frame_target(app, process_name, Some(app_id));
         return;
     }
 
-    app.frame_target = target.clone();
-    if let Some(process_name) = target {
+    if let Some(process_name) = app.frame_resolver.direct_target(&game, &app.state) {
+        start_frame_target(app, process_name, Some(app_id));
+        return;
+    }
+
+    if app.frame_discovery_active {
+        return;
+    }
+
+    if discovery_is_in_cooldown(app) {
+        return;
+    }
+
+    if !presentmon_ready(app) {
         app.frame_metrics = FrameMetrics {
-            process_name: Some(process_name.clone()),
-            status: format!("PresentMon starting {process_name}"),
+            status: app.presentmon_probe.status.clone(),
             ..FrameMetrics::idle()
         };
-        app.frame_rx = Some(spawn_frame_capture(
-            process_name,
-            app.config.integrations.presentmon_exe.clone(),
-        ));
-    } else {
-        app.frame_rx = None;
-        app.frame_metrics = FrameMetrics::idle();
-        push_history(&mut app.fps_history, 0);
+        return;
     }
+
+    start_frame_discovery(app, &game);
+}
+
+fn frame_target_is_stale(app: &App) -> bool {
+    app.frame_metrics.samples == 0
+        && app
+            .frame_target_started_at
+            .is_some_and(|started_at| started_at.elapsed() >= Duration::from_secs(20))
+}
+
+fn discovery_is_in_cooldown(app: &App) -> bool {
+    app.frame_discovery_failed_at
+        .is_some_and(|failed_at| failed_at.elapsed() < Duration::from_secs(30))
+}
+
+fn active_steam_game(app: &App) -> Option<&SteamGame> {
+    let app_id = app.session.active_app_id()?;
+    app.steam.games.iter().find(|game| game.app_id == app_id)
+}
+
+fn process_is_running(state: &SystemState, process_name: &str) -> bool {
+    state.observed_processes.contains_key(process_name)
+        || state.hidden_processes.contains_key(process_name)
+}
+
+fn start_frame_target(app: &mut App, process_name: String, app_id: Option<String>) {
+    if app.frame_target.as_deref() == Some(process_name.as_str()) && !app.frame_discovery_active {
+        return;
+    }
+
+    if !presentmon_ready(app) {
+        app.frame_metrics = FrameMetrics {
+            status: app.presentmon_probe.status.clone(),
+            ..FrameMetrics::idle()
+        };
+        return;
+    }
+
+    if let Some(app_id) = app_id {
+        app.learned_frame_targets
+            .insert(app_id, process_name.clone());
+    }
+    app.frame_target = Some(process_name.clone());
+    app.frame_target_started_at = Some(Instant::now());
+    app.frame_discovery_active = false;
+    app.frame_metrics = FrameMetrics {
+        process_name: Some(process_name.clone()),
+        status: format!("PresentMon starting {process_name}"),
+        ..FrameMetrics::idle()
+    };
+    app.frame_rx = Some(spawn_frame_capture(
+        process_name,
+        app.config.integrations.presentmon_exe.clone(),
+    ));
+    app.fps_history.clear();
+}
+
+fn presentmon_ready(app: &App) -> bool {
+    app.presentmon_probe
+        .path
+        .as_ref()
+        .is_some_and(|path| path.is_file())
+}
+
+fn start_frame_discovery(app: &mut App, game: &SteamGame) {
+    app.frame_target = None;
+    app.frame_target_started_at = None;
+    app.frame_discovery_active = true;
+    app.frame_discovery_failed_at = None;
+    app.frame_metrics = FrameMetrics {
+        status: format!("PresentMon resolving {}", game.name),
+        ..FrameMetrics::idle()
+    };
+    app.frame_rx = Some(spawn_frame_discovery(
+        app.config.integrations.presentmon_exe.clone(),
+        discovery_exclusions(),
+    ));
+    app.fps_history.clear();
+}
+
+fn stop_frame_monitor(app: &mut App) {
+    if app.frame_rx.is_none()
+        && app.frame_target.is_none()
+        && !app.frame_discovery_active
+        && app.frame_metrics.samples == 0
+    {
+        app.frame_metrics = FrameMetrics::idle();
+        app.fps_history.clear();
+        return;
+    }
+
+    app.frame_rx = None;
+    app.frame_target = None;
+    app.frame_target_started_at = None;
+    app.frame_discovery_active = false;
+    app.frame_discovery_failed_at = None;
+    app.frame_resolver.reset();
+    app.frame_metrics = FrameMetrics::idle();
+    app.fps_history.clear();
 }
 
 fn refresh_presentmon_probe(app: &mut App) {
     app.presentmon_probe = probe_presentmon(app.config.integrations.presentmon_exe.as_deref());
+    app.frame_discovery_failed_at = None;
 }
 
 fn request_steam_scan(app: &mut App) {

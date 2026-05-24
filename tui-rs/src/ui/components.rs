@@ -234,6 +234,18 @@ pub(super) fn localized_frame_status(status: &str, language: Language) -> String
             Language::English => status.to_string(),
         };
     }
+    if let Some(game) = status.strip_prefix("PresentMon resolving ") {
+        return match language {
+            Language::Spanish => format!("PresentMon detectando proceso: {game}"),
+            Language::English => format!("PresentMon resolving process: {game}"),
+        };
+    }
+    if let Some(process) = status.strip_prefix("PresentMon probing ") {
+        return match language {
+            Language::Spanish => format!("PresentMon probando {process}"),
+            Language::English => format!("PresentMon probing {process}"),
+        };
+    }
     if let Some(process) = status.strip_prefix("PresentMon tracking ") {
         return match language {
             Language::Spanish => format!("PresentMon tracking {process}"),
