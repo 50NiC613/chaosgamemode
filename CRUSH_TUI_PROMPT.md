@@ -348,6 +348,13 @@ Requisitos:
   localizacion centralizados.
 - Mantener sentido natural en espanol e ingles; no hacer traducciones literales
   raras.
+- El espanol debe sonar a gamer hispano viviendo en Estados Unidos, no a
+  doblaje neutro ni a espanol LatAm generico. Es valido usar Spanglish tecnico
+  cuando sea lo natural: `READY CHECK`, `GAME READY`, `NEEDS CLEANUP`,
+  `TARGETS`, `KILL LIST`, `BLOAT`, `scan`, `launch`, `timer`, `profile`,
+  `Power plan`, `WATCH`.
+- Evitar palabras que suenan forzadas en esta app: `preparacion`, `residuo`,
+  `requiere limpieza`, `a cerrar`, `carga removible`, `objetivos residuales`.
 - Los acronimos tecnicos universales (`CPU`, `GPU`, `FPS`, `RAM`, `APPID`,
   `EXE`) pueden quedarse iguales.
 - Los logs de Overdrive, Restore, Steam, sesiones, historial, modales y estados

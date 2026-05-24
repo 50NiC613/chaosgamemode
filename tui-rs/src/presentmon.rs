@@ -78,6 +78,14 @@ pub(crate) fn probe_presentmon(configured: Option<&Path>) -> PresentMonProbe {
         };
     }
 
+    if let Some(path) = find_bundled_presentmon_exe() {
+        return PresentMonProbe {
+            path: Some(path),
+            source: "bundled",
+            status: "PresentMon listo incluido".to_string(),
+        };
+    }
+
     if let Some(path) = find_known_presentmon_exe() {
         return PresentMonProbe {
             path: Some(path),
@@ -180,6 +188,12 @@ fn run_frame_capture(
 
     let _ = child.wait();
     Ok(())
+}
+
+fn find_bundled_presentmon_exe() -> Option<PathBuf> {
+    let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    let candidate = exe_dir.join("presentmon.exe");
+    candidate.is_file().then_some(candidate)
 }
 
 fn find_known_presentmon_exe() -> Option<PathBuf> {

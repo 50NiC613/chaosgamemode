@@ -80,6 +80,24 @@
                 Source="$(var.PayloadDir)\README.md" />
             </Component>
 
+            <Component Id="PresentMonConsole" Guid="{D50EE927-9190-46C0-B4E6-A14C4FA42458}">
+              <RegistryValue
+                Root="HKCU"
+                Key="Software\ChaosGameMode\Components"
+                Name="PresentMonConsole"
+                Type="integer"
+                Value="1"
+                KeyPath="yes" />
+              <File
+                Id="PresentMonExe"
+                Name="presentmon.exe"
+                Source="$(var.PayloadDir)\presentmon.exe" />
+              <File
+                Id="ThirdPartyNotices"
+                Name="THIRD_PARTY_NOTICES.txt"
+                Source="$(var.PayloadDir)\THIRD_PARTY_NOTICES.txt" />
+            </Component>
+
             <Component Id="UserPathEnvironment" Guid="{D837E351-D738-4B5C-A5F2-66817C1F2EE8}">
               <RegistryValue
                 Root="HKCU"
@@ -109,6 +127,7 @@
       <ComponentRef Id="DefaultConfig" />
       <ComponentRef Id="DefaultTheme" />
       <ComponentRef Id="ReadmeFile" />
+      <ComponentRef Id="PresentMonConsole" />
       <ComponentRef Id="UserPathEnvironment" />
     </Feature>
   </Product>

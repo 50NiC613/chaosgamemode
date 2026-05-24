@@ -47,7 +47,7 @@ The app does not ask for your Steam password and does not need Steam login token
 
 ### FPS And Frame Data
 
-FPS metrics use Intel PresentMon Console when available. The installer can install it with `winget`:
+FPS metrics use Intel PresentMon Console. The MSI bundles `presentmon.exe` beside `chaosgamemode.exe`, so normal installs do not need a separate WinGet step. For portable/dev runs, you can still install it manually:
 
 ```powershell
 winget install Intel.PresentMon.Console
@@ -57,8 +57,9 @@ Chaos Game Mode will look for PresentMon in this order:
 
 1. `presentmon_exe` in `config.toml`
 2. `PRESENTMON_EXE` environment variable
-3. `PATH`
+3. bundled `presentmon.exe` next to `chaosgamemode.exe`
 4. the default WinGet installation path
+5. `PATH`
 
 If PresentMon is missing, the app still runs. FPS, frametime, and 1% low will show as unavailable until the tool is detected.
 
@@ -71,7 +72,7 @@ Requirements:
 - Windows 10 or Windows 11
 - PowerShell 7 recommended
 - Rust stable with the MSVC toolchain
-- WinGet recommended for PresentMon
+- Internet access when building the MSI, so `build-msi.ps1` can download the bundled PresentMon binary
 
 Install or update from the repository:
 
@@ -277,7 +278,7 @@ Requisitos:
 - Windows 10 o Windows 11
 - PowerShell 7 recomendado
 - Rust estable con toolchain MSVC
-- WinGet recomendado para PresentMon
+- Acceso a internet al construir el MSI, para que `build-msi.ps1` descargue el binario incluido de PresentMon
 
 Instalar o actualizar desde el repo:
 
@@ -349,7 +350,7 @@ Politica de procesos:
 
 ### PresentMon
 
-Para FPS, frametime y 1% low se usa Intel PresentMon Console. Puedes instalarlo con:
+Para FPS, frametime y 1% low se usa Intel PresentMon Console. El MSI incluye `presentmon.exe` junto a `chaosgamemode.exe`, asi que una instalacion normal no necesita un paso extra con WinGet. Para uso portable/dev, puedes instalarlo manualmente con:
 
 ```powershell
 winget install Intel.PresentMon.Console
@@ -458,6 +459,8 @@ Local MSI builds are still supported:
 ```powershell
 .\build-msi.ps1 -InstallWix
 ```
+
+The MSI build copies `presentmon.exe` into the installer payload. If PresentMon is not already installed locally, the build script downloads the configured PresentMon release into `.tools\presentmon`.
 
 Suggested manual release notes structure:
 

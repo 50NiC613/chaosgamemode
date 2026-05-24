@@ -196,25 +196,25 @@ pub(super) fn localized_steam_status(status: &str, language: Language) -> String
 pub(super) fn localized_hardware_status(status: &str, language: Language) -> String {
     if status == "hardware sensors pending" {
         return match language {
-            Language::Spanish => "sensores de hardware pendientes".to_string(),
+            Language::Spanish => "hardware sensors pending".to_string(),
             Language::English => status.to_string(),
         };
     }
     if status == "hardware sensors unavailable" {
         return match language {
-            Language::Spanish => "sensores de hardware no disponibles".to_string(),
+            Language::Spanish => "hardware sensors unavailable".to_string(),
             Language::English => status.to_string(),
         };
     }
     if status == "hardware sensors unavailable: powershell" {
         return match language {
-            Language::Spanish => "sensores no disponibles: powershell".to_string(),
+            Language::Spanish => "hardware sensors unavailable: powershell".to_string(),
             Language::English => status.to_string(),
         };
     }
     if let Some(backend) = status.strip_prefix("hardware sensors: ") {
         return match language {
-            Language::Spanish => format!("sensores de hardware: {backend}"),
+            Language::Spanish => format!("hardware sensors: {backend}"),
             Language::English => status.to_string(),
         };
     }
@@ -224,19 +224,19 @@ pub(super) fn localized_hardware_status(status: &str, language: Language) -> Str
 pub(super) fn localized_frame_status(status: &str, language: Language) -> String {
     if status == "PresentMon waiting for Steam game" {
         return match language {
-            Language::Spanish => "PresentMon esperando juego Steam".to_string(),
+            Language::Spanish => "PresentMon esperando Steam game".to_string(),
             Language::English => status.to_string(),
         };
     }
     if let Some(process) = status.strip_prefix("PresentMon starting ") {
         return match language {
-            Language::Spanish => format!("PresentMon iniciando {process}"),
+            Language::Spanish => format!("PresentMon starting {process}"),
             Language::English => status.to_string(),
         };
     }
     if let Some(process) = status.strip_prefix("PresentMon tracking ") {
         return match language {
-            Language::Spanish => format!("PresentMon siguiendo {process}"),
+            Language::Spanish => format!("PresentMon tracking {process}"),
             Language::English => status.to_string(),
         };
     }
@@ -276,6 +276,10 @@ pub(super) fn localized_presentmon_status(status: &str, language: Language) -> S
         "PresentMon listo desde env" => match language {
             Language::Spanish => status.to_string(),
             Language::English => "PresentMon ready from env".to_string(),
+        },
+        "PresentMon listo incluido" => match language {
+            Language::Spanish => status.to_string(),
+            Language::English => "PresentMon ready from bundled exe".to_string(),
         },
         "PRESENTMON_EXE apunta a una ruta invalida" => match language {
             Language::Spanish => status.to_string(),
@@ -386,6 +390,8 @@ pub(super) fn localized_source_value(source: &'static str, language: Language) -
     match (language, source) {
         (Language::Spanish, "none") => "ninguno",
         (Language::English, "none") => "none",
+        (Language::Spanish, "bundled") => "incluido",
+        (Language::English, "bundled") => "bundled",
         _ => source,
     }
 }

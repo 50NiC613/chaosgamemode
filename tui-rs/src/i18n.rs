@@ -60,7 +60,7 @@ impl Language {
 
     pub(crate) const fn ready(self) -> &'static str {
         match self {
-            Self::Spanish => "LISTO",
+            Self::Spanish => "READY",
             Self::English => "READY",
         }
     }
@@ -269,7 +269,7 @@ impl Language {
 
     pub(crate) const fn output_hint(self) -> &'static str {
         match self {
-            Self::Spanish => "Ejecuta Overdrive (1) o Restore (2) para ver resultados.",
+            Self::Spanish => "Usa Overdrive (1) o Restore (2) para ver el output.",
             Self::English => "Run Overdrive (1) or Restore (2) to see results.",
         }
     }
@@ -332,21 +332,21 @@ impl Language {
 
     pub(crate) const fn loading_steam_scan(self) -> &'static str {
         match self {
-            Self::Spanish => "auto detect espera escaneo Steam",
+            Self::Spanish => "auto-detect esperando scan de Steam",
             Self::English => "auto detect waiting for Steam scan",
         }
     }
 
     pub(crate) fn auto_detect_ready(self, games: usize) -> String {
         match self {
-            Self::Spanish => format!("auto detect listo: {games} juegos"),
+            Self::Spanish => format!("auto-detect listo: {games} juegos"),
             Self::English => format!("auto detect ready: {games} games"),
         }
     }
 
     pub(crate) const fn auto_detect_no_games(self) -> &'static str {
         match self {
-            Self::Spanish => "auto detect sin juegos de Steam",
+            Self::Spanish => "auto-detect sin juegos de Steam",
             Self::English => "auto detect unavailable: no Steam games",
         }
     }
@@ -360,7 +360,7 @@ impl Language {
 
     pub(crate) const fn auto_detect_armed(self) -> &'static str {
         match self {
-            Self::Spanish => "auto detect armado",
+            Self::Spanish => "auto-detect armado",
             Self::English => "auto detect armed",
         }
     }
@@ -388,7 +388,7 @@ impl Language {
 
     pub(crate) const fn auto_detect_paused(self) -> &'static str {
         match self {
-            Self::Spanish => "auto detect pausado para juego cerrado",
+            Self::Spanish => "auto-detect paused: game cerrado",
             Self::English => "auto detect paused for ended game",
         }
     }
@@ -402,14 +402,14 @@ impl Language {
 
     pub(crate) const fn rescan_steam_hint(self) -> &'static str {
         match self {
-            Self::Spanish => "  Pulsa S en la pestana Steam para re-escanear la biblioteca.",
+            Self::Spanish => "  Pulsa S en Steam para escanear otra vez.",
             Self::English => "  Press S in the Steam tab to rescan the library.",
         }
     }
 
     pub(crate) const fn overdrive_preview_title(self) -> &'static str {
         match self {
-            Self::Spanish => "PREVIEW DE OVERDRIVE",
+            Self::Spanish => "PREVIEW OVERDRIVE",
             Self::English => "OVERDRIVE PREVIEW",
         }
     }
@@ -423,14 +423,14 @@ impl Language {
 
     pub(crate) const fn launch_after_label(self) -> &'static str {
         match self {
-            Self::Spanish => "Luego lanzara",
+            Self::Spanish => "Despues lanza",
             Self::English => "Then launch",
         }
     }
 
     pub(crate) const fn configured_processes_label(self) -> &'static str {
         match self {
-            Self::Spanish => "Procesos configurados",
+            Self::Spanish => "Procesos en lista",
             Self::English => "Configured processes",
         }
     }
@@ -451,7 +451,7 @@ impl Language {
 
     pub(crate) const fn detected_processes_label(self) -> &'static str {
         match self {
-            Self::Spanish => "Procesos detectados ahora",
+            Self::Spanish => "Procesos live",
             Self::English => "Processes detected now",
         }
     }
@@ -465,49 +465,49 @@ impl Language {
 
     pub(crate) const fn explorer_will_stop(self) -> &'static str {
         match self {
-            Self::Spanish => "se cerrara",
+            Self::Spanish => "se cierra",
             Self::English => "will stop",
         }
     }
 
     pub(crate) const fn explorer_kept(self) -> &'static str {
         match self {
-            Self::Spanish => "se mantiene abierto",
+            Self::Spanish => "se queda abierto",
             Self::English => "kept running",
         }
     }
 
     pub(crate) const fn energy_label(self) -> &'static str {
         match self {
-            Self::Spanish => "Energia",
+            Self::Spanish => "Power plan",
             Self::English => "Power",
         }
     }
 
     pub(crate) const fn high_performance_plan(self) -> &'static str {
         match self {
-            Self::Spanish => "Alto Rendimiento",
+            Self::Spanish => "High Performance",
             Self::English => "High Performance",
         }
     }
 
     pub(crate) const fn balanced_plan(self) -> &'static str {
         match self {
-            Self::Spanish => "Balanceado",
+            Self::Spanish => "Balanced",
             Self::English => "Balanced",
         }
     }
 
     pub(crate) const fn no_changes(self) -> &'static str {
         match self {
-            Self::Spanish => "sin cambios",
+            Self::Spanish => "unchanged",
             Self::English => "unchanged",
         }
     }
 
     pub(crate) const fn overdrive_targets_heading(self) -> &'static str {
         match self {
-            Self::Spanish => "Procesos que Overdrive intentara cerrar ahora:",
+            Self::Spanish => "Targets de Overdrive si confirmas:",
             Self::English => "Processes Overdrive will try to close now:",
         }
     }
@@ -521,7 +521,7 @@ impl Language {
 
     pub(crate) const fn no_overdrive_targets(self) -> &'static str {
         match self {
-            Self::Spanish => "  (ningun proceso objetivo detectado en este perfil)",
+            Self::Spanish => "  (sin targets activos en este profile)",
             Self::English => "  (no target process detected for this profile)",
         }
     }
@@ -768,28 +768,28 @@ impl Language {
 
     pub(crate) const fn system_info_no_processes(self) -> &'static str {
         match self {
-            Self::Spanish => "perfil sin procesos configurados",
+            Self::Spanish => "sin targets configurados",
             Self::English => "profile has no configured processes",
         }
     }
 
     pub(crate) fn system_process_closed(self, line: &str) -> String {
         match self {
-            Self::Spanish => format!("proceso cerrado: {line}"),
+            Self::Spanish => format!("app cerrada: {line}"),
             Self::English => format!("process closed: {line}"),
         }
     }
 
     pub(crate) const fn system_no_heavy_process(self) -> &'static str {
         match self {
-            Self::Spanish => "ningun proceso pesado encontrado",
+            Self::Spanish => "no heavy apps activas",
             Self::English => "no heavy process found",
         }
     }
 
     pub(crate) const fn system_no_services(self) -> &'static str {
         match self {
-            Self::Spanish => "perfil sin servicios configurados",
+            Self::Spanish => "sin services configurados",
             Self::English => "profile has no configured services",
         }
     }
@@ -810,7 +810,7 @@ impl Language {
 
     pub(crate) const fn system_services_optimized(self) -> &'static str {
         match self {
-            Self::Spanish => "servicios ya optimizados",
+            Self::Spanish => "services ya optimizados",
             Self::English => "services already optimized",
         }
     }
@@ -859,98 +859,98 @@ impl Language {
 
     pub(crate) const fn power_plan_line(self) -> &'static str {
         match self {
-            Self::Spanish => "plan de energia",
+            Self::Spanish => "power plan",
             Self::English => "power plan",
         }
     }
 
     pub(crate) const fn killing_background_processes(self) -> &'static str {
         match self {
-            Self::Spanish => "eliminando procesos en segundo plano",
+            Self::Spanish => "cerrando background apps",
             Self::English => "closing background processes",
         }
     }
 
     pub(crate) const fn stopping_services(self) -> &'static str {
         match self {
-            Self::Spanish => "deteniendo servicios",
+            Self::Spanish => "pausando services",
             Self::English => "stopping services",
         }
     }
 
     pub(crate) const fn freeing_system_resources(self) -> &'static str {
         match self {
-            Self::Spanish => "liberando recursos del sistema",
+            Self::Spanish => "freeing RAM y desktop",
             Self::English => "freeing system resources",
         }
     }
 
     pub(crate) const fn explorer_kept_report(self) -> &'static str {
         match self {
-            Self::Spanish => "explorer se mantiene activo en este perfil",
+            Self::Spanish => "explorer queda running en este profile",
             Self::English => "explorer remains active in this profile",
         }
     }
 
     pub(crate) const fn overdrive_activated(self) -> &'static str {
         match self {
-            Self::Spanish => "CHAOS GAME MODE ACTIVADO",
+            Self::Spanish => "OVERDRIVE ACTIVADO",
             Self::English => "CHAOS GAME MODE ACTIVATED",
         }
     }
 
     pub(crate) const fn restoring_windows_shell(self) -> &'static str {
         match self {
-            Self::Spanish => "restaurando interfaz de Windows",
+            Self::Spanish => "restaurando Windows shell",
             Self::English => "restoring Windows shell",
         }
     }
 
     pub(crate) const fn restoring_services(self) -> &'static str {
         match self {
-            Self::Spanish => "restaurando servicios",
+            Self::Spanish => "restaurando services",
             Self::English => "restoring services",
         }
     }
 
     pub(crate) const fn system_restored(self) -> &'static str {
         match self {
-            Self::Spanish => "SISTEMA RESTAURADO",
+            Self::Spanish => "SYSTEM RESTORED",
             Self::English => "SYSTEM RESTORED",
         }
     }
 
     pub(crate) const fn closed_apps_not_reopened(self) -> &'static str {
         match self {
-            Self::Spanish => "apps cerradas no se reabren solas",
+            Self::Spanish => "closed apps no se reabren solas",
             Self::English => "closed apps are not reopened automatically",
         }
     }
 
     pub(crate) const fn label_load(self) -> &'static str {
         match self {
-            Self::Spanish => "CARGA",
+            Self::Spanish => "LOAD",
             Self::English => "LOAD",
         }
     }
 
     pub(crate) const fn label_cores(self) -> &'static str {
         match self {
-            Self::Spanish => "NUCLEOS",
+            Self::Spanish => "CORES",
             Self::English => "CORES",
         }
     }
 
     pub(crate) const fn label_used(self) -> &'static str {
         match self {
-            Self::Spanish => "USADO",
+            Self::Spanish => "USED",
             Self::English => "USED",
         }
     }
 
     pub(crate) const fn label_free(self) -> &'static str {
         match self {
-            Self::Spanish => "LIBRE",
+            Self::Spanish => "FREE",
             Self::English => "FREE",
         }
     }
@@ -961,35 +961,35 @@ impl Language {
 
     pub(crate) const fn label_power(self) -> &'static str {
         match self {
-            Self::Spanish => "ENERGIA",
+            Self::Spanish => "PLAN",
             Self::English => "POWER",
         }
     }
 
     pub(crate) const fn label_desktop(self) -> &'static str {
         match self {
-            Self::Spanish => "ESCRITORIO",
+            Self::Spanish => "DESKTOP",
             Self::English => "DESKTOP",
         }
     }
 
     pub(crate) const fn label_services(self) -> &'static str {
         match self {
-            Self::Spanish => "SERVICIOS",
+            Self::Spanish => "SERVICES",
             Self::English => "SERVICES",
         }
     }
 
     pub(crate) const fn label_bloat(self) -> &'static str {
         match self {
-            Self::Spanish => "RESIDUO",
+            Self::Spanish => "BLOAT",
             Self::English => "BLOAT",
         }
     }
 
     pub(crate) const fn label_sensors(self) -> &'static str {
         match self {
-            Self::Spanish => "SENSORES",
+            Self::Spanish => "SENSORS",
             Self::English => "SENSORS",
         }
     }
@@ -1003,42 +1003,42 @@ impl Language {
 
     pub(crate) const fn label_name(self) -> &'static str {
         match self {
-            Self::Spanish => "NOMBRE",
+            Self::Spanish => "NAME",
             Self::English => "NAME",
         }
     }
 
     pub(crate) const fn label_memory(self) -> &'static str {
         match self {
-            Self::Spanish => "MEMORIA",
+            Self::Spanish => "MEMORY",
             Self::English => "MEMORY",
         }
     }
 
     pub(crate) const fn label_heat(self) -> &'static str {
         match self {
-            Self::Spanish => "CALOR",
+            Self::Spanish => "HEAT",
             Self::English => "HEAT",
         }
     }
 
     pub(crate) const fn label_pattern(self) -> &'static str {
         match self {
-            Self::Spanish => "PATRON",
+            Self::Spanish => "PATTERN",
             Self::English => "PATTERN",
         }
     }
 
     pub(crate) const fn label_status(self) -> &'static str {
         match self {
-            Self::Spanish => "ESTADO",
+            Self::Spanish => "STATUS",
             Self::English => "STATUS",
         }
     }
 
     pub(crate) const fn label_view(self) -> &'static str {
         match self {
-            Self::Spanish => "VISTA",
+            Self::Spanish => "VIEW",
             Self::English => "VIEW",
         }
     }
@@ -1052,35 +1052,35 @@ impl Language {
 
     pub(crate) const fn label_targets(self) -> &'static str {
         match self {
-            Self::Spanish => "OBJETIVOS",
+            Self::Spanish => "TARGETS",
             Self::English => "TARGETS",
         }
     }
 
     pub(crate) const fn label_keep(self) -> &'static str {
         match self {
-            Self::Spanish => "PROTEGER",
+            Self::Spanish => "KEEP",
             Self::English => "KEEP",
         }
     }
 
     pub(crate) const fn label_watch(self) -> &'static str {
         match self {
-            Self::Spanish => "VIGILAR",
+            Self::Spanish => "WATCH",
             Self::English => "WATCH",
         }
     }
 
     pub(crate) const fn label_selected(self) -> &'static str {
         match self {
-            Self::Spanish => "SELECCION",
+            Self::Spanish => "SELECTED",
             Self::English => "SELECTED",
         }
     }
 
     pub(crate) const fn label_visible(self) -> &'static str {
         match self {
-            Self::Spanish => "VISIBLES",
+            Self::Spanish => "VISIBLE",
             Self::English => "VISIBLE",
         }
     }
@@ -1091,25 +1091,28 @@ impl Language {
 
     pub(crate) const fn label_filter(self) -> &'static str {
         match self {
-            Self::Spanish => "FILTRO",
+            Self::Spanish => "FILTER",
             Self::English => "FILTER",
         }
     }
 
     pub(crate) const fn label_payload(self) -> &'static str {
-        "PAYLOAD"
+        match self {
+            Self::Spanish => "PAYLOAD",
+            Self::English => "PAYLOAD",
+        }
     }
 
     pub(crate) const fn label_ready(self) -> &'static str {
         match self {
-            Self::Spanish => "LISTO",
+            Self::Spanish => "READY",
             Self::English => "READY",
         }
     }
 
     pub(crate) const fn label_power_plan(self) -> &'static str {
         match self {
-            Self::Spanish => "PLAN",
+            Self::Spanish => "POWER PLAN",
             Self::English => "POWER PLAN",
         }
     }
@@ -1123,14 +1126,14 @@ impl Language {
 
     pub(crate) const fn label_mode(self) -> &'static str {
         match self {
-            Self::Spanish => "MODO",
+            Self::Spanish => "MODE",
             Self::English => "MODE",
         }
     }
 
     pub(crate) const fn label_protected(self) -> &'static str {
         match self {
-            Self::Spanish => "PROTEGIDOS",
+            Self::Spanish => "PROTECTED",
             Self::English => "PROTECTED",
         }
     }
@@ -1141,105 +1144,105 @@ impl Language {
 
     pub(crate) const fn label_removable(self) -> &'static str {
         match self {
-            Self::Spanish => "REMOVIBLE",
+            Self::Spanish => "CLEANUP",
             Self::English => "REMOVABLE",
         }
     }
 
     pub(crate) const fn label_groups(self) -> &'static str {
         match self {
-            Self::Spanish => "GRUPOS",
+            Self::Spanish => "GROUPS",
             Self::English => "GROUPS",
         }
     }
 
     pub(crate) const fn label_restore(self) -> &'static str {
         match self {
-            Self::Spanish => "RESTAURAR",
+            Self::Spanish => "RESTORE",
             Self::English => "RESTORE",
         }
     }
 
     pub(crate) const fn label_note(self) -> &'static str {
         match self {
-            Self::Spanish => "NOTA",
+            Self::Spanish => "NOTE",
             Self::English => "NOTE",
         }
     }
 
     pub(crate) const fn label_cpu_usage(self) -> &'static str {
         match self {
-            Self::Spanish => "USO CPU",
+            Self::Spanish => "CPU USAGE",
             Self::English => "CPU USAGE",
         }
     }
 
     pub(crate) const fn label_ram_used(self) -> &'static str {
         match self {
-            Self::Spanish => "RAM USADA",
+            Self::Spanish => "RAM USED",
             Self::English => "RAM USED",
         }
     }
 
     pub(crate) const fn label_ram_free(self) -> &'static str {
         match self {
-            Self::Spanish => "RAM LIBRE",
+            Self::Spanish => "RAM FREE",
             Self::English => "RAM FREE",
         }
     }
 
     pub(crate) const fn label_telemetry(self) -> &'static str {
         match self {
-            Self::Spanish => "TELEMETRIA",
+            Self::Spanish => "TELEMETRY",
             Self::English => "TELEMETRY",
         }
     }
 
     pub(crate) const fn label_observed(self) -> &'static str {
         match self {
-            Self::Spanish => "OBSERVADOS",
+            Self::Spanish => "ACTIVOS",
             Self::English => "OBSERVED",
         }
     }
 
     pub(crate) const fn label_uptime(self) -> &'static str {
         match self {
-            Self::Spanish => "TIEMPO",
+            Self::Spanish => "UPTIME",
             Self::English => "UPTIME",
         }
     }
 
     pub(crate) const fn label_processes(self) -> &'static str {
         match self {
-            Self::Spanish => "PROCESOS",
+            Self::Spanish => "PROCESSES",
             Self::English => "PROCESSES",
         }
     }
 
     pub(crate) const fn label_steam_lib(self) -> &'static str {
         match self {
-            Self::Spanish => "BIB STEAM",
+            Self::Spanish => "STEAM LIB",
             Self::English => "STEAM LIB",
         }
     }
 
     pub(crate) const fn label_history(self) -> &'static str {
         match self {
-            Self::Spanish => "HISTORIAL",
+            Self::Spanish => "HISTORY",
             Self::English => "HISTORY",
         }
     }
 
     pub(crate) const fn label_theme_file(self) -> &'static str {
         match self {
-            Self::Spanish => "ARCH TEMA",
+            Self::Spanish => "THEME FILE",
             Self::English => "THEME FILE",
         }
     }
 
     pub(crate) const fn label_gpu_load(self) -> &'static str {
         match self {
-            Self::Spanish => "CARGA GPU",
+            Self::Spanish => "GPU LOAD",
             Self::English => "GPU LOAD",
         }
     }
@@ -1264,7 +1267,7 @@ impl Language {
 
     pub(crate) const fn label_average(self) -> &'static str {
         match self {
-            Self::Spanish => "PROM",
+            Self::Spanish => "AVG",
             Self::English => "AVG",
         }
     }
@@ -1275,7 +1278,7 @@ impl Language {
 
     pub(crate) const fn label_samples(self) -> &'static str {
         match self {
-            Self::Spanish => "MUESTRAS",
+            Self::Spanish => "SAMPLES",
             Self::English => "SAMPLES",
         }
     }
@@ -1289,7 +1292,7 @@ impl Language {
 
     pub(crate) const fn label_language(self) -> &'static str {
         match self {
-            Self::Spanish => "IDIOMA",
+            Self::Spanish => "LANGUAGE",
             Self::English => "LANGUAGE",
         }
     }
@@ -1303,42 +1306,42 @@ impl Language {
 
     pub(crate) const fn label_source(self) -> &'static str {
         match self {
-            Self::Spanish => "ORIGEN",
+            Self::Spanish => "SOURCE",
             Self::English => "SOURCE",
         }
     }
 
     pub(crate) const fn label_resolved(self) -> &'static str {
         match self {
-            Self::Spanish => "RESUELTO",
+            Self::Spanish => "RESOLVED",
             Self::English => "RESOLVED",
         }
     }
 
     pub(crate) const fn label_provider(self) -> &'static str {
         match self {
-            Self::Spanish => "PROVEEDOR",
+            Self::Spanish => "PROVIDER",
             Self::English => "PROVIDER",
         }
     }
 
     pub(crate) const fn label_next(self) -> &'static str {
         match self {
-            Self::Spanish => "SIGUIENTE",
+            Self::Spanish => "NEXT",
             Self::English => "NEXT",
         }
     }
 
     pub(crate) const fn label_logged(self) -> &'static str {
         match self {
-            Self::Spanish => "REGISTRA",
+            Self::Spanish => "LOGGED",
             Self::English => "LOGGED",
         }
     }
 
     pub(crate) const fn label_path(self) -> &'static str {
         match self {
-            Self::Spanish => "RUTA",
+            Self::Spanish => "PATH",
             Self::English => "PATH",
         }
     }
@@ -1349,56 +1352,56 @@ impl Language {
 
     pub(crate) const fn label_lines(self) -> &'static str {
         match self {
-            Self::Spanish => "LINEAS",
+            Self::Spanish => "LINES",
             Self::English => "LINES",
         }
     }
 
     pub(crate) const fn label_warnings(self) -> &'static str {
         match self {
-            Self::Spanish => "AVISOS",
+            Self::Spanish => "WARNINGS",
             Self::English => "WARNINGS",
         }
     }
 
     pub(crate) const fn label_last(self) -> &'static str {
         match self {
-            Self::Spanish => "ULTIMO",
+            Self::Spanish => "LAST",
             Self::English => "LAST",
         }
     }
 
     pub(crate) const fn label_active(self) -> &'static str {
         match self {
-            Self::Spanish => "ACTIVO",
+            Self::Spanish => "ACTIVE",
             Self::English => "ACTIVE",
         }
     }
 
     pub(crate) const fn label_time(self) -> &'static str {
         match self {
-            Self::Spanish => "TIEMPO",
+            Self::Spanish => "TIME",
             Self::English => "TIME",
         }
     }
 
     pub(crate) const fn label_running(self) -> &'static str {
         match self {
-            Self::Spanish => "EJECUTA",
+            Self::Spanish => "RUNNING",
             Self::English => "RUNNING",
         }
     }
 
     pub(crate) const fn label_games(self) -> &'static str {
         match self {
-            Self::Spanish => "JUEGOS",
+            Self::Spanish => "GAMES",
             Self::English => "GAMES",
         }
     }
 
     pub(crate) const fn label_libraries(self) -> &'static str {
         match self {
-            Self::Spanish => "BIBLIOTECAS",
+            Self::Spanish => "LIBRARIES",
             Self::English => "LIBRARIES",
         }
     }
@@ -1409,21 +1412,21 @@ impl Language {
 
     pub(crate) const fn label_target(self) -> &'static str {
         match self {
-            Self::Spanish => "OBJETIVO",
+            Self::Spanish => "TARGET",
             Self::English => "TARGET",
         }
     }
 
     pub(crate) const fn label_capture(self) -> &'static str {
         match self {
-            Self::Spanish => "CAPTURA",
+            Self::Spanish => "CAPTURE",
             Self::English => "CAPTURE",
         }
     }
 
     pub(crate) const fn label_latency(self) -> &'static str {
         match self {
-            Self::Spanish => "LATENCIA",
+            Self::Spanish => "LATENCY",
             Self::English => "LATENCY",
         }
     }
@@ -1441,7 +1444,7 @@ impl Language {
 
     pub(crate) const fn panel_frame_metrics(self) -> &'static str {
         match self {
-            Self::Spanish => "METRICAS DE FRAMES",
+            Self::Spanish => "FPS / LATENCIA",
             Self::English => "FRAME METRICS",
         }
     }
@@ -1452,14 +1455,14 @@ impl Language {
 
     pub(crate) const fn dashboard_ready_status(self) -> &'static str {
         match self {
-            Self::Spanish => "SISTEMA LISTO",
+            Self::Spanish => "GAME READY",
             Self::English => "SYSTEM READY",
         }
     }
 
     pub(crate) const fn dashboard_cleanup_status(self) -> &'static str {
         match self {
-            Self::Spanish => "REQUIERE LIMPIEZA",
+            Self::Spanish => "NEEDS CLEANUP",
             Self::English => "NEEDS CLEANUP",
         }
     }
@@ -1473,14 +1476,14 @@ impl Language {
 
     pub(crate) const fn full_preview_hint(self) -> &'static str {
         match self {
-            Self::Spanish => " preview completo",
+            Self::Spanish => " ver preview completo",
             Self::English => " full preview",
         }
     }
 
     pub(crate) const fn no_residual_targets(self) -> &'static str {
         match self {
-            Self::Spanish => "sin objetivos residuales",
+            Self::Spanish => "no cleanup targets",
             Self::English => "no residual targets",
         }
     }
@@ -1491,7 +1494,7 @@ impl Language {
 
     pub(crate) const fn panel_readiness(self) -> &'static str {
         match self {
-            Self::Spanish => "PREPARACION",
+            Self::Spanish => "READY CHECK",
             Self::English => "READINESS",
         }
     }
@@ -1505,7 +1508,7 @@ impl Language {
 
     pub(crate) const fn panel_process_heatmap(self) -> &'static str {
         match self {
-            Self::Spanish => "MAPA DE PROCESOS",
+            Self::Spanish => "PROCESS HEATMAP",
             Self::English => "PROCESS HEATMAP",
         }
     }
@@ -1540,21 +1543,21 @@ impl Language {
 
     pub(crate) const fn panel_process_map(self) -> &'static str {
         match self {
-            Self::Spanish => "MAPA DE PROCESOS",
+            Self::Spanish => "PROCESOS",
             Self::English => "PROCESS MAP",
         }
     }
 
     pub(crate) const fn top_memory_heading(self) -> &'static str {
         match self {
-            Self::Spanish => " TOP MEMORIA",
+            Self::Spanish => " TOP RAM APPS",
             Self::English => " TOP MEMORY",
         }
     }
 
     pub(crate) const fn current_targets_heading(self) -> &'static str {
         match self {
-            Self::Spanish => " OBJETIVOS ACTUALES",
+            Self::Spanish => " KILL LIST",
             Self::English => " CURRENT TARGETS",
         }
     }
@@ -1582,7 +1585,7 @@ impl Language {
 
     pub(crate) const fn status_watch(self) -> &'static str {
         match self {
-            Self::Spanish => "OBSERVA",
+            Self::Spanish => "WATCH",
             Self::English => "WATCH",
         }
     }
@@ -1603,7 +1606,7 @@ impl Language {
 
     pub(crate) const fn no_actionable_processes(self) -> &'static str {
         match self {
-            Self::Spanish => "No hay procesos accionables detectados",
+            Self::Spanish => "No hay targets activos",
             Self::English => "No actionable processes detected",
         }
     }
@@ -1645,7 +1648,7 @@ impl Language {
 
     pub(crate) const fn view_actionable(self) -> &'static str {
         match self {
-            Self::Spanish => "accionable",
+            Self::Spanish => "target",
             Self::English => "actionable",
         }
     }
@@ -1680,7 +1683,7 @@ impl Language {
 
     pub(crate) fn removable_heat(self, memory_mb: f64) -> String {
         match self {
-            Self::Spanish => format!("{memory_mb:.0} MB de carga removible"),
+            Self::Spanish => format!("{memory_mb:.0} MB cleanup"),
             Self::English => format!("{memory_mb:.0} MB removable heat"),
         }
     }
@@ -1743,7 +1746,7 @@ impl Language {
 
     pub(crate) const fn command_restore_system_detail(self) -> &'static str {
         match self {
-            Self::Spanish => "shell, servicios y energia balanceada",
+            Self::Spanish => "shell, services y balanced power",
             Self::English => "restart shell, services, balanced power",
         }
     }
@@ -1757,7 +1760,7 @@ impl Language {
 
     pub(crate) const fn command_refresh_telemetry_detail(self) -> &'static str {
         match self {
-            Self::Spanish => "toma un snapshot nuevo",
+            Self::Spanish => "pull fresh snapshot",
             Self::English => "pull a fresh system snapshot",
         }
     }
@@ -1799,7 +1802,7 @@ impl Language {
 
     pub(crate) const fn command_exit_detail(self) -> &'static str {
         match self {
-            Self::Spanish => "deja la terminal limpia",
+            Self::Spanish => "clean terminal exit",
             Self::English => "leave terminal cleanly",
         }
     }
@@ -1925,7 +1928,7 @@ impl Language {
 
     pub(crate) const fn panel_restore_plan(self) -> &'static str {
         match self {
-            Self::Spanish => "PLAN RESTORE",
+            Self::Spanish => "RESTORE PLAN",
             Self::English => "RESTORE PLAN",
         }
     }
@@ -1953,7 +1956,7 @@ impl Language {
 
     pub(crate) const fn minimal_shell(self) -> &'static str {
         match self {
-            Self::Spanish => "shell minima",
+            Self::Spanish => "minimal shell",
             Self::English => "minimal shell",
         }
     }
@@ -1988,77 +1991,77 @@ impl Language {
 
     pub(crate) const fn ready_lower(self) -> &'static str {
         match self {
-            Self::Spanish => "listo",
+            Self::Spanish => "ready",
             Self::English => "ready",
         }
     }
 
     pub(crate) const fn high_performance_lower(self) -> &'static str {
         match self {
-            Self::Spanish => "alto rendimiento",
+            Self::Spanish => "high performance",
             Self::English => "high performance",
         }
     }
 
     pub(crate) const fn unchanged(self) -> &'static str {
         match self {
-            Self::Spanish => "sin cambios",
+            Self::Spanish => "unchanged",
             Self::English => "unchanged",
         }
     }
 
     pub(crate) const fn stop_on_overdrive(self) -> &'static str {
         match self {
-            Self::Spanish => "cerrar en OD",
+            Self::Spanish => "stop en OD",
             Self::English => "stop on OD",
         }
     }
 
     pub(crate) const fn keep_running(self) -> &'static str {
         match self {
-            Self::Spanish => "mantener activo",
+            Self::Spanish => "keep running",
             Self::English => "keep running",
         }
     }
 
     pub(crate) const fn clean_prefix(self) -> &'static str {
         match self {
-            Self::Spanish => "  limpio: ",
+            Self::Spanish => "  clean: ",
             Self::English => "  clean: ",
         }
     }
 
     pub(crate) const fn no_configured_targets(self) -> &'static str {
         match self {
-            Self::Spanish => "no hay objetivos configurados detectados",
+            Self::Spanish => "sin targets activos",
             Self::English => "no configured targets detected",
         }
     }
 
     pub(crate) const fn restart_if_closed(self) -> &'static str {
         match self {
-            Self::Spanish => "reiniciar si esta cerrado",
+            Self::Spanish => "restart si esta cerrado",
             Self::English => "restart if closed",
         }
     }
 
     pub(crate) const fn closed_apps_stay_closed(self) -> &'static str {
         match self {
-            Self::Spanish => "las apps cerradas siguen cerradas",
+            Self::Spanish => "closed apps siguen cerradas",
             Self::English => "closed apps stay closed",
         }
     }
 
     pub(crate) const fn undo_overdrive_changes(self) -> &'static str {
         match self {
-            Self::Spanish => "revierte cambios de overdrive",
+            Self::Spanish => "undo cambios de Overdrive",
             Self::English => "undo overdrive changes",
         }
     }
 
     pub(crate) const fn no_target(self) -> &'static str {
         match self {
-            Self::Spanish => "sin objetivo",
+            Self::Spanish => "no target",
             Self::English => "no target",
         }
     }
@@ -2230,7 +2233,7 @@ impl Language {
 
     pub(crate) const fn history_logged_detail(self) -> &'static str {
         match self {
-            Self::Spanish => "previews overdrive, restores, lanzamientos Steam, sesiones",
+            Self::Spanish => "Overdrive previews, restores, Steam launches, sesiones",
             Self::English => "overdrive previews, restore runs, Steam launches, sessions",
         }
     }
@@ -2251,21 +2254,21 @@ impl Language {
 
     pub(crate) const fn history_feed_overdrive(self) -> &'static str {
         match self {
-            Self::Spanish => "que cambio antes de jugar",
+            Self::Spanish => "pre-game changes",
             Self::English => "what changed before gaming",
         }
     }
 
     pub(crate) const fn history_feed_restore(self) -> &'static str {
         match self {
-            Self::Spanish => "que volvio a Windows",
+            Self::Spanish => "Windows restore changes",
             Self::English => "what returned to Windows",
         }
     }
 
     pub(crate) const fn history_feed_sessions(self) -> &'static str {
         match self {
-            Self::Spanish => "lanzamientos y notas de timer",
+            Self::Spanish => "game launches y timer notes",
             Self::English => "game launch and timer notes",
         }
     }
@@ -2279,7 +2282,7 @@ impl Language {
 
     pub(crate) const fn scan_library_hint(self) -> &'static str {
         match self {
-            Self::Spanish => " escanear biblioteca",
+            Self::Spanish => " scan library",
             Self::English => " scan library",
         }
     }
@@ -2300,35 +2303,35 @@ impl Language {
 
     pub(crate) const fn panel_selected_game(self) -> &'static str {
         match self {
-            Self::Spanish => "JUEGO SELECCIONADO",
+            Self::Spanish => "SELECTED GAME",
             Self::English => "SELECTED GAME",
         }
     }
 
     pub(crate) const fn preview_od_launch(self) -> &'static str {
         match self {
-            Self::Spanish => " Preview + lanzar OD",
+            Self::Spanish => " Preview + OD launch",
             Self::English => " Preview + OD launch",
         }
     }
 
     pub(crate) const fn launch_normally(self) -> &'static str {
         match self {
-            Self::Spanish => " Lanzar normal",
+            Self::Spanish => " Launch normal",
             Self::English => " Launch normally",
         }
     }
 
     pub(crate) const fn scan_steam_library(self) -> &'static str {
         match self {
-            Self::Spanish => " Escanear biblioteca Steam",
+            Self::Spanish => " Scan Steam library",
             Self::English => " Scan Steam library",
         }
     }
 
     pub(crate) const fn launch_game_timer_hint(self) -> &'static str {
         match self {
-            Self::Spanish => "  Lanza un juego para iniciar el temporizador",
+            Self::Spanish => "  Lanza un game para arrancar el timer",
             Self::English => "  Launch a game to start a session timer",
         }
     }
@@ -2356,7 +2359,7 @@ impl Language {
 
     pub(crate) const fn scan_libraries(self) -> &'static str {
         match self {
-            Self::Spanish => " Escanear bibliotecas  ",
+            Self::Spanish => " Scan libraries  ",
             Self::English => " Scan libraries  ",
         }
     }

@@ -10,6 +10,9 @@ param(
     [switch]$SkipBuild,
 
     [Parameter(Mandatory = $false)]
+    [string]$PresentMonVersion = "2.4.1",
+
+    [Parameter(Mandatory = $false)]
     [switch]$InstallWix
 )
 
@@ -24,6 +27,7 @@ $PayloadDir = Join-Path $OutputDir "payload"
 $ToolsDir = Join-Path $ProjectRoot ".tools"
 $LocalDotnetDir = Join-Path $ToolsDir "dotnet"
 $LocalWixDir = Join-Path $ToolsDir "wix"
+$PresentMonCacheDir = Join-Path $ToolsDir "presentmon"
 $Wix4Version = "4.0.6"
 
 function Write-Step {
@@ -164,6 +168,80 @@ function Invoke-Wix4 {
     & $WixExe @Arguments
 }
 
+function Get-InstalledPresentMonConsolePath {
+    foreach ($commandName in @("presentmon", "presentmon.exe", "PresentMon.exe")) {
+        $command = Get-Command $commandName -ErrorAction SilentlyContinue
+        if ($command -and (Test-Path $command.Source)) {
+            return $command.Source
+        }
+    }
+
+    $wingetPackageDir = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages\Intel.PresentMon.Console_Microsoft.Winget.Source_8wekyb3d8bbwe"
+    $direct = Join-Path $wingetPackageDir "presentmon.exe"
+    if (Test-Path $direct) {
+        return $direct
+    }
+
+    if (Test-Path $wingetPackageDir) {
+        $found = Get-ChildItem -Path $wingetPackageDir -Filter "presentmon.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) {
+            return $found.FullName
+        }
+    }
+
+    return $null
+}
+
+function Get-PresentMonConsoleForPayload {
+    $installed = Get-InstalledPresentMonConsolePath
+    if ($installed) {
+        Write-Step "Usando PresentMon Console detectado: $installed"
+        return $installed
+    }
+
+    $assetName = "PresentMon-$PresentMonVersion-x64.exe"
+    $cached = Join-Path $PresentMonCacheDir $assetName
+    if (-not (Test-Path $cached)) {
+        New-Item -ItemType Directory -Path $PresentMonCacheDir -Force | Out-Null
+        $uri = "https://github.com/GameTechDev/PresentMon/releases/download/v$PresentMonVersion/$assetName"
+        Write-Step "Descargando PresentMon Console $PresentMonVersion"
+        Invoke-WebRequest -Uri $uri -OutFile $cached -UseBasicParsing
+    }
+
+    return $cached
+}
+
+function Write-ThirdPartyNotices {
+    param([string]$Target)
+
+    @"
+Chaos Game Mode includes Intel PresentMon Console.
+
+PresentMon
+Copyright (C) 2017-2024 Intel Corporation
+Source: https://github.com/GameTechDev/PresentMon
+License: MIT
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"@ | Set-Content -Path $Target -Encoding UTF8
+}
+
 function Clear-DirectoryInside {
     param(
         [string]$Target,
@@ -224,6 +302,10 @@ foreach ($file in @("config.toml", "theme.toml")) {
     }
 }
 Copy-Item -Path (Join-Path $ProjectRoot "README.md") -Destination (Join-Path $PayloadDir "README.md") -Force
+
+$presentMonSource = Get-PresentMonConsoleForPayload
+Copy-Item -Path $presentMonSource -Destination (Join-Path $PayloadDir "presentmon.exe") -Force
+Write-ThirdPartyNotices -Target (Join-Path $PayloadDir "THIRD_PARTY_NOTICES.txt")
 
 $wix = Get-Wix3Toolset
 $wix4 = if (-not $wix) { Get-Wix4Toolset } else { $null }
