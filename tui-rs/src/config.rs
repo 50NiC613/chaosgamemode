@@ -649,26 +649,24 @@ impl UiConfig {
 }
 
 fn find_config_file() -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-
     if let Ok(path) = std::env::var("CHAOS_CONFIG") {
-        candidates.push(PathBuf::from(path));
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return Some(path);
+        }
     }
+
+    if let Some(path) = seed_installed_config() {
+        return Some(path);
+    }
+
+    let mut candidates = Vec::new();
     if let Ok(current_dir) = std::env::current_dir() {
         candidates.push(current_dir.join("config.toml"));
         candidates.push(current_dir.join("tui-rs").join("config.toml"));
     }
-    if let Ok(exe_path) = std::env::current_exe()
-        && let Some(exe_dir) = exe_path.parent()
-    {
-        candidates.push(exe_dir.join("config.toml"));
-    }
 
-    if let Some(path) = candidates.into_iter().find(|path| path.is_file()) {
-        return Some(path);
-    }
-
-    seed_installed_config()
+    candidates.into_iter().find(|path| path.is_file())
 }
 
 fn seed_installed_config() -> Option<PathBuf> {

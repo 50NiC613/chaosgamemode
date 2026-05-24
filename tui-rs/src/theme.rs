@@ -506,26 +506,24 @@ impl ThemeWatcher {
 }
 
 fn find_theme_file() -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-
     if let Ok(path) = std::env::var("CHAOS_THEME") {
-        candidates.push(PathBuf::from(path));
+        let path = PathBuf::from(path);
+        if path.is_file() {
+            return Some(path);
+        }
     }
+
+    if let Some(path) = seed_installed_theme() {
+        return Some(path);
+    }
+
+    let mut candidates = Vec::new();
     if let Ok(current_dir) = std::env::current_dir() {
         candidates.push(current_dir.join("theme.toml"));
         candidates.push(current_dir.join("tui-rs").join("theme.toml"));
     }
-    if let Ok(exe_path) = std::env::current_exe()
-        && let Some(exe_dir) = exe_path.parent()
-    {
-        candidates.push(exe_dir.join("theme.toml"));
-    }
 
-    if let Some(path) = candidates.into_iter().find(|path| path.is_file()) {
-        return Some(path);
-    }
-
-    seed_installed_theme()
+    candidates.into_iter().find(|path| path.is_file())
 }
 
 fn seed_installed_theme() -> Option<PathBuf> {
