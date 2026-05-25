@@ -20,7 +20,9 @@ use crate::config::{AppConfig, BoostProfile, TelemetryConfig};
 use crate::frames::{
     FrameMetrics, FrameProbe, probe_frame_backend, spawn_frame_capture, spawn_frame_discovery,
 };
-use crate::game_resolver::{GameProcessResolver, discovery_exclusions, is_rejected_process};
+use crate::game_resolver::{
+    FrameCandidateDiagnostic, GameProcessResolver, discovery_exclusions, is_rejected_process,
+};
 use crate::history;
 use crate::hotkeys::{HotkeyEvent, spawn_hotkey_thread};
 use crate::i18n::Language;
@@ -28,7 +30,7 @@ use crate::metrics::{
     format_duration, percent_from_f32, push_history, sorted_filtered_hidden_processes,
     sorted_filtered_observed_processes, truncate,
 };
-use crate::overlay::{OverlaySnapshot, OverlayStatus, spawn_overlay_thread};
+use crate::overlay::{OverlayHudField, OverlaySnapshot, OverlayStatus, spawn_overlay_thread};
 use crate::steam::{
     CompletedSession, SessionState, SteamGame, SteamLibrary, SteamScanResult, install_steam_game,
     launch_steam_game, open_steam_downloads, open_steam_game_properties, spawn_steam_scan,
@@ -48,6 +50,10 @@ const FRAME_GUARD_WARMUP: Duration = Duration::from_secs(20);
 const FRAME_COLLAPSE_THRESHOLD_FPS: f64 = 10.0;
 const FRAME_COLLAPSE_DURATION: Duration = Duration::from_secs(6);
 const FRAME_RECOVERY_THRESHOLD_FPS: f64 = 18.0;
+const SESSION_STARTUP_GRACE: Duration = Duration::from_secs(120);
+const SESSION_MISSING_GRACE: Duration = Duration::from_secs(12);
+const OVERLAY_PULSE_DURATION: Duration = Duration::from_millis(900);
+const OVERLAY_PULSE_STEP: Duration = Duration::from_millis(150);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Screen {
@@ -109,6 +115,18 @@ pub(crate) struct FrameEventLog {
 struct FrameGuard {
     low_fps_since: Option<Instant>,
     alerted: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct OverlayBadgeState {
+    pub(crate) enabled: bool,
+    pub(crate) flash: bool,
+}
+
+#[derive(Clone, Copy)]
+struct OverlayPulse {
+    enabled: bool,
+    started_at: Instant,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -209,6 +227,35 @@ impl FrameGuard {
     fn reset(&mut self) {
         self.low_fps_since = None;
         self.alerted = false;
+    }
+}
+
+impl OverlayPulse {
+    fn new(enabled: bool, started_at: Instant) -> Self {
+        Self {
+            enabled,
+            started_at,
+        }
+    }
+
+    fn is_active(self, now: Instant) -> bool {
+        now.duration_since(self.started_at) < OVERLAY_PULSE_DURATION
+    }
+
+    fn flash(self, now: Instant) -> bool {
+        if !self.is_active(now) {
+            return false;
+        }
+
+        (now.duration_since(self.started_at).as_millis() / OVERLAY_PULSE_STEP.as_millis())
+            .is_multiple_of(2)
+    }
+
+    fn badge_state(self, now: Instant) -> OverlayBadgeState {
+        OverlayBadgeState {
+            enabled: self.enabled,
+            flash: self.flash(now),
+        }
     }
 }
 
@@ -320,6 +367,7 @@ pub(crate) struct App {
     overlay_tx: Sender<OverlaySnapshot>,
     overlay_status_rx: Receiver<OverlayStatus>,
     pub(crate) overlay_status: OverlayStatus,
+    overlay_pulse: Option<OverlayPulse>,
     last_overlay_sync: Instant,
     frame_rx: Option<Receiver<FrameMetrics>>,
     frame_target: Option<String>,
@@ -331,6 +379,7 @@ pub(crate) struct App {
     pub(crate) frame_metrics: FrameMetrics,
     pub(crate) frame_probe: FrameProbe,
     pub(crate) frame_events: FrameEventLog,
+    pub(crate) frame_candidates: Vec<FrameCandidateDiagnostic>,
     frame_guard: FrameGuard,
     pub(crate) performance_alert: Option<String>,
     last_frame_probe_refresh: Instant,
@@ -339,6 +388,7 @@ pub(crate) struct App {
     pub(crate) session: SessionState,
     pub(crate) auto_session_status: String,
     auto_session_ignore_app_id: Option<String>,
+    active_session_missing_since: Option<Instant>,
     pub(crate) process_selected: usize,
     pub(crate) show_hidden_processes: bool,
     pub(crate) process_filter: String,
@@ -347,6 +397,7 @@ pub(crate) struct App {
     pub(crate) history_path: PathBuf,
     pub(crate) history_status: String,
     pub(crate) history_scroll: u16,
+    pub(crate) last_overdrive: Option<OverdriveRunSummary>,
     pub(crate) cpu_history: Vec<u64>,
     pub(crate) gpu_history: Vec<u64>,
     pub(crate) fps_history: Vec<u64>,
@@ -387,6 +438,36 @@ impl App {
             self.state.observed_processes.len()
         }
     }
+
+    pub(crate) fn overdrive_profiler_findings(&self) -> Vec<OverdriveProfilerFinding> {
+        overdrive_profiler_findings(
+            self.last_overdrive.as_ref(),
+            self.performance_alert.as_deref(),
+            self.frame_metrics.fps,
+            self.state.cpu_usage,
+            self.state.ram_used_pct(),
+            self.state.hardware.gpu_load_pct,
+        )
+    }
+
+    pub(crate) fn overlay_badge_state(&self, now: Instant) -> OverlayBadgeState {
+        self.overlay_pulse.map_or(
+            OverlayBadgeState {
+                enabled: self.config.overlay.enabled,
+                flash: false,
+            },
+            |pulse| {
+                if pulse.is_active(now) {
+                    pulse.badge_state(now)
+                } else {
+                    OverlayBadgeState {
+                        enabled: self.config.overlay.enabled,
+                        flash: false,
+                    }
+                }
+            },
+        )
+    }
 }
 
 struct HistoryView {
@@ -396,9 +477,51 @@ struct HistoryView {
 }
 
 #[derive(Clone, Copy)]
-struct OverdriveImpact {
-    target_groups: usize,
-    waste_mb: f64,
+pub(crate) struct OverdriveImpact {
+    pub(crate) target_groups: usize,
+    pub(crate) waste_mb: f64,
+}
+
+#[derive(Clone)]
+pub(crate) struct OverdriveRunSummary {
+    pub(crate) profile_name: String,
+    pub(crate) started_at: Instant,
+    pub(crate) before: OverdriveImpact,
+    pub(crate) after: OverdriveImpact,
+    pub(crate) set_high_performance: bool,
+    pub(crate) kill_explorer: bool,
+    pub(crate) configured_services: usize,
+    pub(crate) configured_processes: usize,
+    pub(crate) actions: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OverdriveProfilerSeverity {
+    Info,
+    Warning,
+    Critical,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OverdriveProfilerSignal {
+    Waiting,
+    FpsCollapse,
+    ExplorerStopped,
+    ServicesTouched,
+    LargeProcessScope,
+    RamPressure,
+    GpuUnderutilized,
+    CpuSaturated,
+    LowCleanupImpact,
+    RestoreAvailable,
+    Healthy,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct OverdriveProfilerFinding {
+    pub(crate) severity: OverdriveProfilerSeverity,
+    pub(crate) signal: OverdriveProfilerSignal,
+    pub(crate) value: String,
 }
 
 pub(crate) fn run() -> io::Result<()> {
@@ -443,6 +566,7 @@ pub(crate) fn run() -> io::Result<()> {
         overlay_tx: overlay_channels.tx,
         overlay_status_rx: overlay_channels.status_rx,
         overlay_status,
+        overlay_pulse: None,
         last_overlay_sync: now - overlay_update_rate,
         frame_rx: None,
         frame_target: None,
@@ -454,6 +578,7 @@ pub(crate) fn run() -> io::Result<()> {
         frame_metrics: FrameMetrics::idle(),
         frame_probe,
         frame_events: FrameEventLog::default(),
+        frame_candidates: Vec::new(),
         frame_guard: FrameGuard::default(),
         performance_alert: None,
         last_frame_probe_refresh: now,
@@ -462,6 +587,7 @@ pub(crate) fn run() -> io::Result<()> {
         session: SessionState::default(),
         auto_session_status: language.loading_steam_scan().to_string(),
         auto_session_ignore_app_id: None,
+        active_session_missing_since: None,
         process_selected: 0,
         show_hidden_processes: false,
         process_filter: String::new(),
@@ -470,6 +596,7 @@ pub(crate) fn run() -> io::Result<()> {
         history_path: history_view.path,
         history_status: history_view.status,
         history_scroll: 0,
+        last_overdrive: None,
         cpu_history: vec![percent_from_f32(state.cpu_usage).into()],
         gpu_history: vec![state.hardware.gpu_load_pct.unwrap_or(0).into()],
         fps_history: vec![0],
@@ -685,6 +812,7 @@ fn overlay_snapshot(app: &App) -> OverlaySnapshot {
         gpu_usage_pct: app.state.hardware.gpu_load_pct,
         gpu_temp_c: app.state.hardware.gpu_temp_c,
         waste_mb: app.state.total_waste_mb,
+        hud: app.config.overlay_hud_for_app(app.session.active_app_id()),
     }
 }
 
@@ -740,9 +868,13 @@ fn sync_frame_guard(app: &mut App) {
 
     match event {
         Some(FrameGuardEvent::Alert) => {
-            let message = "Overdrive FPS collapse; press 2 to restore".to_string();
+            let message = overdrive_guard_alert_message(app.frame_metrics.fps);
             app.performance_alert = Some(message.clone());
             record_frame_event(app, FrameEventKind::Guard, message);
+            if let Some(alert) = app.performance_alert.clone() {
+                let log = overdrive_guard_history_lines(app, &alert);
+                append_background_action(app, "overdrive_guard_alert", log);
+            }
         }
         Some(FrameGuardEvent::Recovered) => {
             app.performance_alert = None;
@@ -750,6 +882,11 @@ fn sync_frame_guard(app: &mut App) {
                 app,
                 FrameEventKind::Guard,
                 "Overdrive FPS recovered".to_string(),
+            );
+            append_background_action(
+                app,
+                "overdrive_guard_recovered",
+                vec!["  guard: FPS recovered after Overdrive alert".to_string()],
             );
         }
         Some(FrameGuardEvent::Clear) => {
@@ -798,10 +935,14 @@ fn drain_frame_metrics(app: &mut App) {
 
 fn drain_discovery_metric(app: &mut App, metric: FrameMetrics) {
     if metric.process_name.is_none() {
+        apply_frame_metrics(app, metric);
+        if !discovery_status_is_terminal(&app.frame_metrics.status) {
+            refresh_active_frame_candidates(app);
+            return;
+        }
         app.frame_discovery_active = false;
         app.frame_discovery_failed_at = Some(Instant::now());
         app.frame_rx = None;
-        apply_frame_metrics(app, metric);
         return;
     }
 
@@ -811,9 +952,11 @@ fn drain_discovery_metric(app: &mut App, metric: FrameMetrics) {
 
     if let Some(process_name) = app.frame_resolver.observe_frame(&metric, &game, &app.state) {
         start_frame_target(app, process_name, Some(game.app_id));
+        refresh_active_frame_candidates(app);
         return;
     }
 
+    refresh_active_frame_candidates(app);
     if let Some(best) = app.frame_resolver.best() {
         apply_frame_metrics(
             app,
@@ -826,12 +969,31 @@ fn drain_discovery_metric(app: &mut App, metric: FrameMetrics) {
     }
 }
 
+fn discovery_status_is_terminal(status: &str) -> bool {
+    status != "RTSS waiting for hooked game frames"
+}
+
 fn frame_metric_matches_target(app: &App, metric: &FrameMetrics) -> bool {
     match (&app.frame_target, metric.process_name.as_deref()) {
-        (Some(target), Some(process_name)) => target.eq_ignore_ascii_case(process_name),
+        (Some(target), Some(process_name)) => process_names_match(target, process_name),
         (Some(_), None) => true,
         (None, _) => true,
     }
+}
+
+fn process_names_match(left: &str, right: &str) -> bool {
+    left.eq_ignore_ascii_case(right)
+        || process_basename(left)
+            .zip(process_basename(right))
+            .is_some_and(|(left, right)| left.eq_ignore_ascii_case(&right))
+}
+
+fn process_basename(value: &str) -> Option<String> {
+    let trimmed = value
+        .trim()
+        .trim_matches(|ch| ch == '<' || ch == '>' || ch == '"' || ch == '\'');
+    let basename = trimmed.rsplit(['\\', '/']).next().unwrap_or(trimmed).trim();
+    (!basename.is_empty()).then(|| basename.to_string())
 }
 
 fn sync_frame_monitor(app: &mut App) {
@@ -859,6 +1021,7 @@ fn sync_frame_monitor(app: &mut App) {
             },
         );
         app.fps_history.clear();
+        refresh_active_frame_candidates(app);
     }
 
     if let Some(target) = app.frame_target.clone() {
@@ -884,6 +1047,7 @@ fn sync_frame_monitor(app: &mut App) {
                 );
                 app.fps_history.clear();
             } else {
+                refresh_active_frame_candidates(app);
                 return;
             }
         } else {
@@ -922,10 +1086,12 @@ fn sync_frame_monitor(app: &mut App) {
     }
 
     if app.frame_discovery_active {
+        refresh_active_frame_candidates(app);
         return;
     }
 
     if discovery_is_in_cooldown(app) {
+        refresh_active_frame_candidates(app);
         return;
     }
 
@@ -938,10 +1104,12 @@ fn sync_frame_monitor(app: &mut App) {
                 ..FrameMetrics::idle()
             },
         );
+        refresh_active_frame_candidates(app);
         return;
     }
 
     start_frame_discovery(app, &game);
+    refresh_active_frame_candidates(app);
 }
 
 fn frame_target_is_stale(app: &App) -> bool {
@@ -962,8 +1130,11 @@ fn active_steam_game(app: &App) -> Option<&SteamGame> {
 }
 
 fn process_is_running(state: &SystemState, process_name: &str) -> bool {
-    state.observed_processes.contains_key(process_name)
-        || state.hidden_processes.contains_key(process_name)
+    state
+        .observed_processes
+        .keys()
+        .chain(state.hidden_processes.keys())
+        .any(|name| process_names_match(name, process_name))
 }
 
 fn start_frame_target(app: &mut App, process_name: String, app_id: Option<String>) {
@@ -1000,6 +1171,7 @@ fn start_frame_target(app: &mut App, process_name: String, app_id: Option<String
     );
     app.frame_rx = Some(spawn_frame_capture(process_name));
     app.fps_history.clear();
+    refresh_active_frame_candidates(app);
 }
 
 fn frame_backend_ready(app: &App) -> bool {
@@ -1038,6 +1210,7 @@ fn stop_frame_monitor(app: &mut App) {
     {
         apply_frame_metrics(app, FrameMetrics::idle());
         app.fps_history.clear();
+        app.frame_candidates.clear();
         return;
     }
 
@@ -1049,6 +1222,15 @@ fn stop_frame_monitor(app: &mut App) {
     app.frame_resolver.reset();
     apply_frame_metrics(app, FrameMetrics::idle());
     app.fps_history.clear();
+    app.frame_candidates.clear();
+}
+
+fn refresh_active_frame_candidates(app: &mut App) {
+    if let Some(game) = active_steam_game(app) {
+        app.frame_candidates = app.frame_resolver.diagnostics(game, &app.state);
+    } else {
+        app.frame_candidates.clear();
+    }
 }
 
 fn refresh_frame_probe(app: &mut App) {
@@ -1060,12 +1242,28 @@ fn refresh_frame_probe(app: &mut App) {
 }
 
 fn toggle_overlay(app: &mut App) {
-    app.config.toggle_overlay_enabled();
+    app.config.overlay.enabled = !app.config.overlay.enabled;
+    app.overlay_pulse = Some(OverlayPulse::new(
+        app.config.overlay.enabled,
+        Instant::now(),
+    ));
+    app.config.status = format!(
+        "overlay runtime: {}",
+        if app.config.overlay.enabled {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
     app.overlay_status = if app.config.overlay.enabled {
         OverlayStatus {
             active: false,
             backend: app.config.overlay.backend,
-            message: "RTSS overlay armed; waiting for Steam game".to_string(),
+            message: if app.session.active.is_some() {
+                "RTSS overlay enabling".to_string()
+            } else {
+                "RTSS overlay armed; waiting for Steam game".to_string()
+            },
         }
     } else {
         OverlayStatus::disabled(app.config.overlay.backend)
@@ -1074,6 +1272,58 @@ fn toggle_overlay(app: &mut App) {
     record_frame_event(app, FrameEventKind::Overlay, status);
     app.last_overlay_sync = Instant::now() - app.config.overlay.update_rate;
     send_overlay_snapshot(app);
+}
+
+fn cycle_overlay_layout(app: &mut App) {
+    let app_id = app.session.active_app_id().map(ToOwned::to_owned);
+    app.config.cycle_overlay_layout(app_id.as_deref());
+    app.last_overlay_sync = Instant::now() - app.config.overlay.update_rate;
+    send_overlay_snapshot(app);
+}
+
+fn toggle_overlay_hud_field(app: &mut App, field: OverlayHudField) {
+    let app_id = app.session.active_app_id().map(ToOwned::to_owned);
+    app.config
+        .toggle_overlay_hud_field(app_id.as_deref(), field);
+    app.last_overlay_sync = Instant::now() - app.config.overlay.update_rate;
+    send_overlay_snapshot(app);
+}
+
+fn cycle_selected_steam_hud_layout(app: &mut App) {
+    let Some(app_id) = selected_steam_app_id(app) else {
+        app.config.status = "overlay hud: no selected Steam game".to_string();
+        return;
+    };
+
+    app.config.cycle_overlay_layout(Some(&app_id));
+    app.last_overlay_sync = Instant::now() - app.config.overlay.update_rate;
+    send_overlay_snapshot(app);
+}
+
+fn toggle_selected_steam_hud_field(app: &mut App, field: OverlayHudField) {
+    let Some(app_id) = selected_steam_app_id(app) else {
+        app.config.status = "overlay hud: no selected Steam game".to_string();
+        return;
+    };
+
+    app.config.toggle_overlay_hud_field(Some(&app_id), field);
+    app.last_overlay_sync = Instant::now() - app.config.overlay.update_rate;
+    send_overlay_snapshot(app);
+}
+
+fn reset_selected_steam_hud_profile(app: &mut App) {
+    let Some(app_id) = selected_steam_app_id(app) else {
+        app.config.status = "overlay hud: no selected Steam game".to_string();
+        return;
+    };
+
+    app.config.reset_overlay_hud_for_app(&app_id);
+    app.last_overlay_sync = Instant::now() - app.config.overlay.update_rate;
+    send_overlay_snapshot(app);
+}
+
+fn selected_steam_app_id(app: &App) -> Option<String> {
+    app.steam.selected_game().map(|game| game.app_id.clone())
 }
 
 fn is_overlay_toggle_hotkey(code: KeyCode, modifiers: KeyModifiers) -> bool {
@@ -1110,6 +1360,7 @@ fn apply_system_state(app: &mut App, state: SystemState) {
         app.state.total_waste_mb.round() as u64,
     );
     sync_auto_steam_session(app);
+    refresh_active_frame_candidates(app);
 }
 
 fn clamp_process_selection(app: &mut App) {
@@ -1596,6 +1847,26 @@ fn sync_auto_steam_session(app: &mut App) {
         return;
     }
 
+    if let Some(active_app_id) = app.session.active_app_id().map(ToOwned::to_owned) {
+        if active_session_game_is_running(app, &active_app_id) {
+            app.active_session_missing_since = None;
+        } else if should_end_missing_session(app, &active_app_id) {
+            let was_auto = app.session.active_is_auto_detected();
+            let log = finish_active_session(app);
+            stop_frame_monitor(app);
+            app.auto_session_status = language.auto_session_ended().to_string();
+            append_background_action(
+                app,
+                if was_auto {
+                    "steam_auto_detect_end"
+                } else {
+                    "steam_session_end"
+                },
+                log,
+            );
+        }
+    }
+
     if !app.session.active_is_auto_detected() {
         if app.session.active.is_some() {
             app.auto_session_status = language.manual_session_active().to_string();
@@ -1629,6 +1900,40 @@ fn sync_auto_steam_session(app: &mut App) {
     }
 }
 
+fn active_session_game_is_running(app: &App, app_id: &str) -> bool {
+    app.steam
+        .running_process_for_app(app_id, &app.state)
+        .is_some()
+        || app
+            .learned_frame_targets
+            .get(app_id)
+            .is_some_and(|target| process_is_running(&app.state, target))
+}
+
+fn should_end_missing_session(app: &mut App, app_id: &str) -> bool {
+    let Some(session) = &app.session.active else {
+        app.active_session_missing_since = None;
+        return false;
+    };
+
+    let target_known = app.learned_frame_targets.contains_key(app_id)
+        || app.frame_target.is_some()
+        || app.frame_metrics.samples > 0;
+    if should_wait_for_session_startup(session.started_at.elapsed(), target_known) {
+        app.active_session_missing_since = None;
+        return false;
+    }
+
+    let missing_since = app
+        .active_session_missing_since
+        .get_or_insert_with(Instant::now);
+    missing_since.elapsed() >= SESSION_MISSING_GRACE
+}
+
+fn should_wait_for_session_startup(session_age: Duration, target_known: bool) -> bool {
+    !target_known && session_age < SESSION_STARTUP_GRACE
+}
+
 fn should_ignore_detected_game(app: &mut App, detected: Option<&SteamGame>) -> bool {
     let Some(ignored_app_id) = app.auto_session_ignore_app_id.as_deref() else {
         return false;
@@ -1650,6 +1955,7 @@ fn start_auto_detected_session(app: &mut App, game: SteamGame) {
 fn start_auto_detected_session_with_log(app: &mut App, game: SteamGame, mut log: Vec<String>) {
     let language = app.config.ui.language;
     app.auto_session_ignore_app_id = None;
+    app.active_session_missing_since = None;
     app.session.start_detected(&game);
     app.auto_session_status = language.detected(&truncate(&game.name, 28));
     record_frame_event(
@@ -1672,6 +1978,191 @@ fn append_background_action(app: &mut App, event: &str, mut log: Vec<String>) {
     let profile_name = app.config.active_profile_name().to_string();
     append_action_history(&mut log, event, &profile_name, app.config.ui.language);
     refresh_history_if_visible(app);
+}
+
+fn overdrive_guard_alert_message(fps: Option<f64>) -> String {
+    match fps {
+        Some(fps) => format!(
+            "Overdrive FPS collapse: {:.0} FPS; press 2 to restore",
+            fps.round().clamp(0.0, 999.0)
+        ),
+        None => "Overdrive FPS collapse; press 2 to restore".to_string(),
+    }
+}
+
+fn overdrive_guard_history_lines(app: &App, alert: &str) -> Vec<String> {
+    let mut lines = vec![format!("  guard: {alert}")];
+    if let Some(run) = &app.last_overdrive {
+        lines.push(format!(
+            "  overdrive: profile={} age={}",
+            run.profile_name,
+            format_duration(run.started_at.elapsed())
+        ));
+        lines.push(format!(
+            "  impact: {:.0}->{:.0} MB removable / {}->{} targets",
+            run.before.waste_mb,
+            run.after.waste_mb,
+            run.before.target_groups,
+            run.after.target_groups
+        ));
+        lines.push(format!(
+            "  changes: power={} explorer={} services={} process-patterns={}",
+            if run.set_high_performance {
+                "high-performance"
+            } else {
+                "unchanged"
+            },
+            if run.kill_explorer { "stopped" } else { "kept" },
+            run.configured_services,
+            run.configured_processes
+        ));
+    }
+    for finding in app
+        .overdrive_profiler_findings()
+        .into_iter()
+        .filter(|finding| finding.severity != OverdriveProfilerSeverity::Info)
+        .take(3)
+    {
+        lines.push(format!(
+            "  profiler: {} {}",
+            overdrive_profiler_signal_key(finding.signal),
+            finding.value
+        ));
+    }
+    lines.push("  action: press 2 to restore power/shell/services".to_string());
+    lines
+}
+
+fn overdrive_profiler_findings(
+    run: Option<&OverdriveRunSummary>,
+    performance_alert: Option<&str>,
+    fps: Option<f64>,
+    cpu_usage: f32,
+    ram_usage_pct: u16,
+    gpu_usage_pct: Option<u16>,
+) -> Vec<OverdriveProfilerFinding> {
+    let Some(run) = run else {
+        return vec![profiler_finding(
+            OverdriveProfilerSeverity::Info,
+            OverdriveProfilerSignal::Waiting,
+            "",
+        )];
+    };
+
+    let mut findings = Vec::new();
+
+    if performance_alert.is_some() {
+        findings.push(profiler_finding(
+            OverdriveProfilerSeverity::Critical,
+            OverdriveProfilerSignal::FpsCollapse,
+            fps.map_or_else(
+                || "live FPS unavailable".to_string(),
+                |fps| format!("{:.0} FPS", fps.round().clamp(0.0, 999.0)),
+            ),
+        ));
+        findings.push(profiler_finding(
+            OverdriveProfilerSeverity::Critical,
+            OverdriveProfilerSignal::RestoreAvailable,
+            "press 2",
+        ));
+    }
+
+    if run.kill_explorer {
+        findings.push(profiler_finding(
+            OverdriveProfilerSeverity::Warning,
+            OverdriveProfilerSignal::ExplorerStopped,
+            "try keep Explorer",
+        ));
+    }
+
+    if run.configured_services > 0 {
+        findings.push(profiler_finding(
+            OverdriveProfilerSeverity::Warning,
+            OverdriveProfilerSignal::ServicesTouched,
+            format!("{} services", run.configured_services),
+        ));
+    }
+
+    if run.configured_processes >= 35 {
+        findings.push(profiler_finding(
+            OverdriveProfilerSeverity::Warning,
+            OverdriveProfilerSignal::LargeProcessScope,
+            format!("{} patterns", run.configured_processes),
+        ));
+    }
+
+    if ram_usage_pct >= 90 {
+        findings.push(profiler_finding(
+            OverdriveProfilerSeverity::Warning,
+            OverdriveProfilerSignal::RamPressure,
+            format!("{ram_usage_pct}% RAM"),
+        ));
+    }
+
+    if cpu_usage >= 90.0 {
+        findings.push(profiler_finding(
+            OverdriveProfilerSeverity::Warning,
+            OverdriveProfilerSignal::CpuSaturated,
+            format!("{:.0}% CPU", cpu_usage.round().clamp(0.0, 100.0)),
+        ));
+    }
+
+    if fps.is_some_and(|fps| fps < FRAME_RECOVERY_THRESHOLD_FPS)
+        && gpu_usage_pct.is_some_and(|gpu| gpu < 45)
+    {
+        findings.push(profiler_finding(
+            OverdriveProfilerSeverity::Warning,
+            OverdriveProfilerSignal::GpuUnderutilized,
+            gpu_usage_pct.map_or("--% GPU".to_string(), |gpu| format!("{gpu}% GPU")),
+        ));
+    }
+
+    let cleanup_mb = (run.before.waste_mb - run.after.waste_mb).max(0.0);
+    if cleanup_mb < 256.0 && run.before.waste_mb >= 1024.0 {
+        findings.push(profiler_finding(
+            OverdriveProfilerSeverity::Info,
+            OverdriveProfilerSignal::LowCleanupImpact,
+            format!("{cleanup_mb:.0} MB cleaned"),
+        ));
+    }
+
+    if findings.is_empty() {
+        findings.push(profiler_finding(
+            OverdriveProfilerSeverity::Info,
+            OverdriveProfilerSignal::Healthy,
+            "monitoring",
+        ));
+    }
+
+    findings
+}
+
+fn profiler_finding(
+    severity: OverdriveProfilerSeverity,
+    signal: OverdriveProfilerSignal,
+    value: impl Into<String>,
+) -> OverdriveProfilerFinding {
+    OverdriveProfilerFinding {
+        severity,
+        signal,
+        value: value.into(),
+    }
+}
+
+fn overdrive_profiler_signal_key(signal: OverdriveProfilerSignal) -> &'static str {
+    match signal {
+        OverdriveProfilerSignal::Waiting => "waiting",
+        OverdriveProfilerSignal::FpsCollapse => "fps-collapse",
+        OverdriveProfilerSignal::ExplorerStopped => "explorer-stopped",
+        OverdriveProfilerSignal::ServicesTouched => "services-touched",
+        OverdriveProfilerSignal::LargeProcessScope => "large-process-scope",
+        OverdriveProfilerSignal::RamPressure => "ram-pressure",
+        OverdriveProfilerSignal::GpuUnderutilized => "gpu-underutilized",
+        OverdriveProfilerSignal::CpuSaturated => "cpu-saturated",
+        OverdriveProfilerSignal::LowCleanupImpact => "low-cleanup-impact",
+        OverdriveProfilerSignal::RestoreAvailable => "restore-available",
+        OverdriveProfilerSignal::Healthy => "healthy",
+    }
 }
 
 fn overdrive_impact_from_state(state: &SystemState) -> OverdriveImpact {
@@ -1701,6 +2192,7 @@ fn overdrive_impact_line(
 fn perform_overdrive(app: &mut App) -> Vec<String> {
     let language = app.config.ui.language;
     let profile = app.config.active_profile().clone();
+    let profile_name = app.config.active_profile_name().to_string();
     let before = overdrive_impact_from_state(&app.state);
     let mut output = action_lines(&activate_chaos_mode(&profile, language));
 
@@ -1708,6 +2200,22 @@ fn perform_overdrive(app: &mut App) -> Vec<String> {
     let after = overdrive_impact_from_state(&app.state);
     output.push(String::new());
     output.push(overdrive_impact_line(language, before, after));
+    app.last_overdrive = Some(OverdriveRunSummary {
+        profile_name,
+        started_at: Instant::now(),
+        before,
+        after,
+        set_high_performance: profile.set_high_performance,
+        kill_explorer: profile.kill_explorer,
+        configured_services: profile.services.len(),
+        configured_processes: profile.processes.len(),
+        actions: output
+            .iter()
+            .filter(|line| !line.trim().is_empty())
+            .take(8)
+            .cloned()
+            .collect(),
+    });
 
     output
 }
@@ -1725,6 +2233,12 @@ fn run_restore(app: &mut App) {
     let profile = app.config.active_profile().clone();
     let profile_name = app.config.active_profile_name().to_string();
     let mut output = action_lines(&restore_system(&profile, language));
+    app.performance_alert = None;
+    app.frame_guard.reset();
+    app.last_overdrive = None;
+    if let Some(session) = &mut app.session.active {
+        session.overdrive = false;
+    }
     append_action_history(&mut output, "restore", &profile_name, language);
     show_output(app, output);
 }
@@ -1900,6 +2414,7 @@ fn launch_steam_game_with_overdrive(app: &mut App, game: SteamGame) {
     }
 
     app.auto_session_ignore_app_id = None;
+    app.active_session_missing_since = None;
     app.session.start(&game, true);
     app.auto_session_status = language.manual_session_active().to_string();
     record_frame_event(
@@ -1911,7 +2426,10 @@ fn launch_steam_game_with_overdrive(app: &mut App, game: SteamGame) {
     log.push(format!("  \u{f017} {}", language.session_started()));
 
     append_action_history(&mut log, "steam_overdrive_launch", &profile_name, language);
-    show_output(app, log);
+    app.output = log;
+    app.output_scroll = 0;
+    app.screen = Screen::Monitor;
+    focus_frames_for_game(app);
 }
 
 fn launch_steam_game_without_overdrive(app: &mut App, game: SteamGame) {
@@ -1939,6 +2457,7 @@ fn launch_steam_game_without_overdrive(app: &mut App, game: SteamGame) {
     }
 
     app.auto_session_ignore_app_id = None;
+    app.active_session_missing_since = None;
     app.session.start(&game, false);
     app.auto_session_status = language.manual_session_active().to_string();
     record_frame_event(
@@ -1950,12 +2469,16 @@ fn launch_steam_game_without_overdrive(app: &mut App, game: SteamGame) {
     log.push(format!("  \u{f017} {}", language.session_started()));
 
     append_action_history(&mut log, "steam_launch", &profile_name, language);
-    show_output(app, log);
+    app.output = log;
+    app.output_scroll = 0;
+    app.screen = Screen::Monitor;
+    focus_frames_for_game(app);
 }
 
 fn finish_active_session(app: &mut App) -> Vec<String> {
     let language = app.config.ui.language;
     let mut log = Vec::new();
+    app.active_session_missing_since = None;
     if let Some(session) = app.session.stop() {
         record_frame_event(
             app,
@@ -2032,6 +2555,33 @@ fn handle_event(app: &mut App, event: Event) -> bool {
                 KeyCode::Char('r') | KeyCode::Char('R') if app.tab == Tab::Settings => {
                     refresh_frame_probe(app);
                 }
+                KeyCode::Char('h') | KeyCode::Char('H') if app.tab == Tab::Settings => {
+                    cycle_overlay_layout(app);
+                }
+                KeyCode::Char('d') | KeyCode::Char('D') if app.tab == Tab::Settings => {
+                    toggle_overlay_hud_field(app, OverlayHudField::FrameStats);
+                }
+                KeyCode::Char('g') | KeyCode::Char('G') if app.tab == Tab::Settings => {
+                    toggle_overlay_hud_field(app, OverlayHudField::Gpu);
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') if app.tab == Tab::Settings => {
+                    toggle_overlay_hud_field(app, OverlayHudField::Cpu);
+                }
+                KeyCode::Char('a') | KeyCode::Char('A') if app.tab == Tab::Settings => {
+                    toggle_overlay_hud_field(app, OverlayHudField::Ram);
+                }
+                KeyCode::Char('w') | KeyCode::Char('W') if app.tab == Tab::Settings => {
+                    toggle_overlay_hud_field(app, OverlayHudField::Waste);
+                }
+                KeyCode::Char('s') | KeyCode::Char('S') if app.tab == Tab::Settings => {
+                    toggle_overlay_hud_field(app, OverlayHudField::Session);
+                }
+                KeyCode::Char('p') | KeyCode::Char('P') if app.tab == Tab::Settings => {
+                    toggle_overlay_hud_field(app, OverlayHudField::Profile);
+                }
+                KeyCode::Char('t') | KeyCode::Char('T') if app.tab == Tab::Settings => {
+                    toggle_overlay_hud_field(app, OverlayHudField::Target);
+                }
                 KeyCode::Char('r') | KeyCode::Char('R') if app.tab == Tab::Frames => {
                     refresh_frame_probe(app);
                 }
@@ -2058,6 +2608,36 @@ fn handle_event(app: &mut App, event: Event) -> bool {
                 }
                 KeyCode::Char('l') | KeyCode::Char('L') if app.tab == Tab::Steam => {
                     launch_selected_steam_game(app, false);
+                }
+                KeyCode::Char('h') | KeyCode::Char('H') if app.tab == Tab::Steam => {
+                    cycle_selected_steam_hud_layout(app);
+                }
+                KeyCode::Char('f') | KeyCode::Char('F') if app.tab == Tab::Steam => {
+                    toggle_selected_steam_hud_field(app, OverlayHudField::FrameStats);
+                }
+                KeyCode::Char('g') | KeyCode::Char('G') if app.tab == Tab::Steam => {
+                    toggle_selected_steam_hud_field(app, OverlayHudField::Gpu);
+                }
+                KeyCode::Char('c') | KeyCode::Char('C') if app.tab == Tab::Steam => {
+                    toggle_selected_steam_hud_field(app, OverlayHudField::Cpu);
+                }
+                KeyCode::Char('a') | KeyCode::Char('A') if app.tab == Tab::Steam => {
+                    toggle_selected_steam_hud_field(app, OverlayHudField::Ram);
+                }
+                KeyCode::Char('w') | KeyCode::Char('W') if app.tab == Tab::Steam => {
+                    toggle_selected_steam_hud_field(app, OverlayHudField::Waste);
+                }
+                KeyCode::Char('y') | KeyCode::Char('Y') if app.tab == Tab::Steam => {
+                    toggle_selected_steam_hud_field(app, OverlayHudField::Session);
+                }
+                KeyCode::Char('r') | KeyCode::Char('R') if app.tab == Tab::Steam => {
+                    toggle_selected_steam_hud_field(app, OverlayHudField::Profile);
+                }
+                KeyCode::Char('t') | KeyCode::Char('T') if app.tab == Tab::Steam => {
+                    toggle_selected_steam_hud_field(app, OverlayHudField::Target);
+                }
+                KeyCode::Char('x') | KeyCode::Char('X') if app.tab == Tab::Steam => {
+                    reset_selected_steam_hud_profile(app);
                 }
                 KeyCode::Char('s') | KeyCode::Char('S') if app.tab == Tab::Steam => {
                     request_steam_scan(app);
@@ -2495,6 +3075,23 @@ mod tests {
     }
 
     #[test]
+    fn overlay_pulse_should_flash_immediately_after_toggle() {
+        let started_at = Instant::now();
+        let pulse = OverlayPulse::new(true, started_at);
+
+        assert!(pulse.badge_state(started_at).flash);
+    }
+
+    #[test]
+    fn overlay_pulse_should_stop_flashing_after_duration() {
+        let started_at = Instant::now();
+        let pulse = OverlayPulse::new(true, started_at);
+        let after_pulse = started_at + OVERLAY_PULSE_DURATION + Duration::from_millis(1);
+
+        assert!(!pulse.badge_state(after_pulse).flash);
+    }
+
+    #[test]
     fn frame_event_log_should_deduplicate_adjacent_events() {
         let mut log = FrameEventLog::default();
 
@@ -2520,6 +3117,44 @@ mod tests {
 
         assert_eq!(entries.len(), FRAME_EVENT_LIMIT);
         assert_eq!(entries[0].message, "event 2");
+    }
+
+    #[test]
+    fn discovery_waiting_status_should_keep_probe_alive() {
+        assert!(!discovery_status_is_terminal(
+            "RTSS waiting for hooked game frames"
+        ));
+    }
+
+    #[test]
+    fn discovery_failure_status_should_end_probe() {
+        assert!(discovery_status_is_terminal(
+            "RTSS did not expose an active game target"
+        ));
+    }
+
+    #[test]
+    fn process_names_match_should_accept_rtss_paths() {
+        assert!(process_names_match(
+            r"D:\Steam\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe",
+            "Cyberpunk2077.exe"
+        ));
+    }
+
+    #[test]
+    fn missing_session_should_wait_during_startup_without_known_target() {
+        assert!(should_wait_for_session_startup(
+            SESSION_STARTUP_GRACE - Duration::from_secs(1),
+            false
+        ));
+    }
+
+    #[test]
+    fn missing_session_should_not_wait_after_target_was_known() {
+        assert!(!should_wait_for_session_startup(
+            Duration::from_secs(1),
+            true
+        ));
     }
 
     #[test]
@@ -2577,6 +3212,51 @@ mod tests {
     }
 
     #[test]
+    fn overdrive_guard_alert_message_should_include_live_fps_when_available() {
+        assert_eq!(
+            overdrive_guard_alert_message(Some(3.4)),
+            "Overdrive FPS collapse: 3 FPS; press 2 to restore"
+        );
+    }
+
+    #[test]
+    fn overdrive_profiler_should_flag_aggressive_collapse_context() {
+        let summary = test_overdrive_summary();
+        let findings = overdrive_profiler_findings(
+            Some(&summary),
+            Some("Overdrive FPS collapse"),
+            Some(3.0),
+            40.0,
+            82,
+            Some(20),
+        );
+
+        let signals = findings
+            .iter()
+            .map(|finding| finding.signal)
+            .collect::<Vec<_>>();
+
+        assert!(signals.contains(&OverdriveProfilerSignal::FpsCollapse));
+        assert!(signals.contains(&OverdriveProfilerSignal::ExplorerStopped));
+        assert!(signals.contains(&OverdriveProfilerSignal::ServicesTouched));
+        assert!(signals.contains(&OverdriveProfilerSignal::GpuUnderutilized));
+    }
+
+    #[test]
+    fn overdrive_profiler_should_report_healthy_when_no_risk_is_visible() {
+        let mut summary = test_overdrive_summary();
+        summary.kill_explorer = false;
+        summary.configured_services = 0;
+        summary.configured_processes = 10;
+        summary.after.waste_mb = 1_000.0;
+
+        let findings =
+            overdrive_profiler_findings(Some(&summary), None, Some(60.0), 35.0, 60, Some(90));
+
+        assert_eq!(findings[0].signal, OverdriveProfilerSignal::Healthy);
+    }
+
+    #[test]
     fn overdrive_impact_line_should_compare_before_and_after() {
         let line = overdrive_impact_line(
             Language::English,
@@ -2591,5 +3271,25 @@ mod tests {
         );
 
         assert_eq!(line, "  impact: 2048 -> 256 MB removable / 7 -> 2 targets");
+    }
+
+    fn test_overdrive_summary() -> OverdriveRunSummary {
+        OverdriveRunSummary {
+            profile_name: "aggressive".to_string(),
+            started_at: Instant::now(),
+            before: OverdriveImpact {
+                target_groups: 40,
+                waste_mb: 4_000.0,
+            },
+            after: OverdriveImpact {
+                target_groups: 38,
+                waste_mb: 3_900.0,
+            },
+            set_high_performance: true,
+            kill_explorer: true,
+            configured_services: 9,
+            configured_processes: 42,
+            actions: vec!["profile aggressive".to_string()],
+        }
     }
 }

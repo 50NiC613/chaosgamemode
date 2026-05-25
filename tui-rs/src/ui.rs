@@ -3,6 +3,8 @@ mod dashboard;
 mod pages;
 mod steam_panel;
 
+use std::time::Instant;
+
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -99,6 +101,7 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
             format_duration(app.started_at.elapsed()),
             Style::new().fg(theme.blue),
         ),
+        overlay_badge_span(app),
         Span::styled(
             format!(
                 "  CPU {:>3.0}%  RAM {:>3}%  FPS {}  WASTE {:.0}MB",
@@ -121,6 +124,24 @@ fn render_header(frame: &mut Frame, app: &App, area: Rect) {
         .style(Style::new().bg(theme.black));
 
     frame.render_widget(Paragraph::new(header).block(block), area);
+}
+
+fn overlay_badge_span(app: &App) -> Span<'static> {
+    let theme = &app.theme;
+    let badge = app.overlay_badge_state(Instant::now());
+    let text = if badge.enabled {
+        "  OSD ON  "
+    } else {
+        "  OSD OFF "
+    };
+    let style = match (badge.enabled, badge.flash) {
+        (true, true) => Style::new().fg(theme.black).bg(theme.acid_green).bold(),
+        (false, true) => Style::new().fg(theme.black).bg(theme.hot_red).bold(),
+        (true, false) => Style::new().fg(theme.acid_green).bold(),
+        (false, false) => Style::new().fg(theme.muted),
+    };
+
+    Span::styled(text, style)
 }
 
 fn render_tabs(frame: &mut Frame, app: &App, area: Rect) {
@@ -290,13 +311,15 @@ fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             spans.extend([
                 keycap(theme, "R"),
                 Span::styled(format!(" {} ", lang.probe()), Style::new().fg(theme.muted)),
+                keycap(theme, "H"),
+                Span::styled(" hud ".to_string(), Style::new().fg(theme.muted)),
+                keycap(theme, "D/G/C"),
+                Span::styled(" fields ".to_string(), Style::new().fg(theme.muted)),
                 keycap(theme, "S-F12"),
                 Span::styled(
                     format!(" {} ", lang.overlay()),
                     Style::new().fg(theme.muted),
                 ),
-                keycap(theme, "M"),
-                Span::styled(format!(" {} ", lang.theme()), Style::new().fg(theme.muted)),
             ]);
         }
         Tab::Frames => {

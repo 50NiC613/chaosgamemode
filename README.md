@@ -25,7 +25,7 @@ Chaos Game Mode is a terminal dashboard and optimizer for Windows gaming session
 - Opens a dedicated `Frames` tab for MangoHUD-style FPS, frametime, RTSS status, GPU/CPU traces, and active game context.
 - Shows a Frames hook log so RTSS, Steam session, game process detection, FPS capture, and overlay state can be checked at a glance.
 - Can publish a lightweight fullscreen OSD through RivaTuner Statistics Server (RTSS), so FPS/session metrics can appear over exclusive fullscreen games.
-- Uses a compact RTSS HUD layout with LIVE/SYNC state, FPS, average FPS, 1% low, frametime, GPU/CPU/RAM, session, profile, and target process.
+- Uses configurable RTSS HUD presets (`Compact`, `MangoHUD`, `Debug`) with toggles for FPS detail, GPU/CPU/RAM, waste, session, profile, and target process.
 - Warns when an Overdrive session collapses under very low FPS for several seconds, without restoring automatically.
 - Marks processes as `TARGET`, `KEEP`, `WATCH`, or `HIDDEN` so you can tune what the optimizer should touch.
 - Protects important apps by default, including SteelSeries tools.
@@ -61,9 +61,9 @@ Chaos Game Mode automatically waits for Steam launchers and helper windows, then
 
 When a Steam game is launched or auto-detected, the TUI can move into the `Frames` tab so the second monitor becomes a focused performance view instead of crowding the main dashboard.
 
-The `Frames` tab includes a hook status panel and short hook log. Use it to verify RTSS readiness, the active Steam session, the resolved game process, live FPS samples, and the fullscreen overlay state.
+The `Frames` tab includes a hook status panel, short hook log, and `RTSS CANDIDATES` diagnostics. Use it to verify RTSS readiness, the active Steam session, the resolved game process, live FPS samples, rejected launcher/reporter candidates, and the fullscreen overlay state.
 
-During an Overdrive-launched session, Chaos Game Mode also watches for severe FPS collapse. If live FPS stays below 10 after the warmup window, the Frames tab and RTSS overlay show a guard warning so you can press `2` to restore the system or inspect the active profile.
+During an Overdrive-launched session, Chaos Game Mode also watches for severe FPS collapse. If live FPS stays below 10 after the warmup window, the Frames tab and RTSS overlay show a guard warning so you can press `2` to restore the system. The `Performance Guard` panel keeps the last Overdrive profile, impact, power/shell/service scope, action context, and profiler suggestions visible while you diagnose the drop.
 
 ### Fullscreen Overlay
 
@@ -78,13 +78,38 @@ Requirements for the overlay:
 Controls and config:
 
 - Press `Shift+F12` to toggle the overlay while Chaos Game Mode is running, even when the game is focused. `O` also works from the `Frames` or `Settings` tab.
+- The hotkey uses a global Windows keyboard hook first and falls back to the terminal/local hotkey when the hook is unavailable.
 - The overlay only renders while a Steam session is active; when no game is detected it stays armed and keeps the OSD clean.
+- The `Settings` tab can tune the HUD without editing files: `H` cycles layout preset, `D` toggles FPS details, and `G/C/A/W/S/P/T` toggle GPU, CPU, RAM, waste, session, profile, and target.
+- HUD changes are saved for the active Steam game when a session is running; otherwise they update the global default.
+- The `Steam` tab can also tune the selected game's HUD before launch: `H` cycles the preset, `F/G/C/A/W/Y/R/T` toggle fields, and `X` resets that game back to the global default.
+- RTSS controls final OSD placement, font, scale, and color styling. Chaos Game Mode controls the text payload and update cadence.
 
 ```toml
 [overlay]
 enabled = true
 backend = "rtss"
 update_ms = 100
+layout = "mangohud"       # compact, mangohud, debug
+show_frame_stats = true   # avg, 1% low, frametime
+show_gpu = true
+show_cpu = true
+show_ram = true
+show_waste = true
+show_session = true
+show_profile = true
+show_target = false
+
+[overlay_game_profiles."1091500"] # per-game override, Cyberpunk 2077 example
+layout = "mangohud"
+show_frame_stats = true
+show_gpu = true
+show_cpu = true
+show_ram = true
+show_waste = true
+show_session = true
+show_profile = true
+show_target = false
 ```
 
 ### Installation
@@ -114,6 +139,12 @@ Run a quick installation/RTSS diagnostic:
 
 ```powershell
 chaosgamemode --doctor
+```
+
+Dump the live RTSS frame entries while a game is open:
+
+```powershell
+chaosgamemode --rtss-dump
 ```
 
 Update the installed app after code changes:
@@ -185,7 +216,7 @@ Important sections:
 
 ```toml
 active_profile = "balanced"
-config_version = 2
+config_version = 4
 
 [ui]
 language = "es" # es or en
@@ -199,6 +230,26 @@ platform_ms = 15000
 enabled = true
 backend = "rtss"
 update_ms = 100
+layout = "mangohud"
+show_frame_stats = true
+show_gpu = true
+show_cpu = true
+show_ram = true
+show_waste = true
+show_session = true
+show_profile = true
+show_target = false
+
+[overlay_game_profiles."1091500"] # Cyberpunk 2077 example
+layout = "mangohud"
+show_frame_stats = true
+show_gpu = true
+show_cpu = true
+show_ram = true
+show_waste = true
+show_session = true
+show_profile = true
+show_target = false
 ```
 
 Profiles:
@@ -289,7 +340,7 @@ Chaos Game Mode es un dashboard y optimizador en terminal para sesiones de gamin
 - Abre una tab dedicada `Frames`, estilo MangoHUD, con FPS, frametime, estado de RTSS, trazas GPU/CPU y contexto del juego activo.
 - Muestra un hook log en `Frames` para revisar RTSS, sesion de Steam, deteccion del proceso del juego, captura FPS y estado del overlay.
 - Puede publicar un OSD ligero via RivaTuner Statistics Server (RTSS), para ver metricas encima de juegos en fullscreen exclusivo.
-- Usa un HUD compacto en RTSS con estado LIVE/SYNC, FPS, FPS promedio, 1% low, frametime, GPU/CPU/RAM, sesion, perfil y proceso target.
+- Usa presets configurables de HUD en RTSS (`Compact`, `MangoHUD`, `Debug`) con toggles para detalle FPS, GPU/CPU/RAM, waste, sesion, perfil y proceso target.
 - Avisa si una sesion con Overdrive cae por debajo de FPS muy bajos durante varios segundos, sin restaurar automaticamente.
 - Clasifica procesos como `TARGET`, `KEEP`, `WATCH` u `HIDDEN` para decidir que se puede cerrar y que debe respetarse.
 - Protege apps importantes por defecto, incluyendo herramientas de SteelSeries.
@@ -323,9 +374,9 @@ Si RTSS no esta instalado o esta cerrado, la app sigue funcionando. CPU/RAM/GPU/
 
 Chaos Game Mode espera automaticamente launchers y ventanas auxiliares de Steam, y se queda con el proceso activo cuando RTSS empieza a entregar samples de frames reales.
 
-La tab `Frames` incluye un panel de hook status y un hook log corto. Sirve para confirmar si RTSS esta listo, si hay sesion Steam activa, que proceso del juego se resolvio, si ya hay FPS en vivo y si el overlay fullscreen esta activo.
+La tab `Frames` incluye un panel de hook status, un hook log corto y diagnostico `RTSS CANDIDATES`. Sirve para confirmar si RTSS esta listo, si hay sesion Steam activa, que proceso del juego se resolvio, si ya hay FPS en vivo, que launchers/reporters se rechazaron y si el overlay fullscreen esta activo.
 
-Durante una sesion lanzada con Overdrive, Chaos Game Mode tambien vigila caidas severas de FPS. Si los FPS se quedan por debajo de 10 despues de la ventana inicial, la tab Frames y el overlay RTSS muestran una alerta para que puedas pulsar `2` y restaurar el sistema o revisar el perfil activo.
+Durante una sesion lanzada con Overdrive, Chaos Game Mode tambien vigila caidas severas de FPS. Si los FPS se quedan por debajo de 10 despues de la ventana inicial, la tab Frames y el overlay RTSS muestran una alerta para que puedas pulsar `2` y restaurar el sistema. El panel `Performance Guard` mantiene visible el ultimo perfil Overdrive, impacto, alcance de power/shell/servicios, contexto de acciones y sugerencias del profiler mientras diagnosticas la caida.
 
 ### Instalacion
 
@@ -354,6 +405,12 @@ Diagnostico rapido de instalacion/RTSS:
 
 ```powershell
 chaosgamemode --doctor
+```
+
+Volcar las entradas FPS que RTSS esta exponiendo mientras el juego esta abierto:
+
+```powershell
+chaosgamemode --rtss-dump
 ```
 
 Actualizar despues de cambiar el codigo:
@@ -402,7 +459,7 @@ Secciones clave:
 
 - `[ui]`: idioma de la interfaz.
 - `[telemetry]`: frecuencia de CPU/RAM/procesos/plataforma.
-- `[overlay]`: backend RTSS, activacion del OSD y frecuencia de actualizacion.
+- `[overlay]`: backend RTSS, activacion del OSD, frecuencia de actualizacion y campos visibles del HUD.
 - `[profiles.safe]`, `[profiles.balanced]`, `[profiles.aggressive]`: perfiles de optimizacion.
 
 Perfiles:
@@ -433,12 +490,36 @@ Uso:
 
 - Pulsa `Shift+F12` para activar/desactivar el overlay mientras Chaos Game Mode esta abierto, incluso con el juego enfocado. `O` tambien funciona desde `Frames` o `Ajustes`.
 - El overlay solo se dibuja cuando hay una sesion de Steam activa; sin juego abierto queda armado y no ensucia la pantalla.
+- La tab `Ajustes` permite tunear el HUD sin editar archivos: `H` cambia el preset, `D` activa/desactiva detalles FPS, y `G/C/A/W/S/P/T` alternan GPU, CPU, RAM, waste, sesion, perfil y target.
+- Si hay una sesion Steam activa, los cambios del HUD se guardan para ese juego; si no hay juego activo, actualizan el default global.
+- La tab `Steam` tambien permite tunear el HUD del juego seleccionado antes de lanzarlo: `H` cambia el preset, `F/G/C/A/W/Y/R/T` alternan campos y `X` devuelve ese juego al default global.
+- RTSS controla la posicion final, fuente, escala y estilo de color del OSD. Chaos Game Mode controla el texto y la frecuencia de actualizacion.
 
 ```toml
 [overlay]
 enabled = true
 backend = "rtss"
 update_ms = 100
+layout = "mangohud"       # compact, mangohud, debug
+show_frame_stats = true   # avg, 1% low, frametime
+show_gpu = true
+show_cpu = true
+show_ram = true
+show_waste = true
+show_session = true
+show_profile = true
+show_target = false
+
+[overlay_game_profiles."1091500"] # override por juego, ejemplo Cyberpunk 2077
+layout = "mangohud"
+show_frame_stats = true
+show_gpu = true
+show_cpu = true
+show_ram = true
+show_waste = true
+show_session = true
+show_profile = true
+show_target = false
 ```
 
 ### Roadmap

@@ -8,6 +8,8 @@ use ratatui::{
 
 use crate::app::App;
 use crate::metrics::{format_duration, truncate};
+use crate::overlay::{OverlayHudConfig, OverlayHudField};
+use crate::theme::Theme;
 
 use super::components::*;
 
@@ -24,8 +26,8 @@ fn render_steam_wide(frame: &mut Frame, app: &App, area: Rect) {
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Percentage(42),
-            Constraint::Percentage(32),
-            Constraint::Percentage(26),
+            Constraint::Percentage(30),
+            Constraint::Percentage(28),
         ])
         .split(area);
 
@@ -41,14 +43,16 @@ fn render_steam_wide(frame: &mut Frame, app: &App, area: Rect) {
     let right = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(14),
+            Constraint::Length(12),
+            Constraint::Length(11),
             Constraint::Length(8),
             Constraint::Min(7),
         ])
         .split(columns[2]);
     render_steam_tools_panel(frame, app, right[0]);
-    render_steam_runtime_panel(frame, app, right[1]);
-    render_steam_library_summary(frame, app, right[2]);
+    render_steam_hud_panel(frame, app, right[1]);
+    render_steam_runtime_panel(frame, app, right[2]);
+    render_steam_library_summary(frame, app, right[3]);
 }
 
 fn render_steam_compact(frame: &mut Frame, app: &App, area: Rect) {
@@ -63,14 +67,16 @@ fn render_steam_compact(frame: &mut Frame, app: &App, area: Rect) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Min(6),
+            Constraint::Length(10),
+            Constraint::Length(7),
+            Constraint::Min(5),
         ])
         .split(columns[1]);
 
     render_steam_selection(frame, app, right[0]);
-    render_session_panel(frame, app, right[1]);
-    render_steam_tools_panel(frame, app, right[2]);
+    render_steam_hud_panel(frame, app, right[1]);
+    render_session_panel(frame, app, right[2]);
+    render_steam_tools_panel(frame, app, right[3]);
 }
 
 fn render_steam_library(frame: &mut Frame, app: &App, area: Rect) {
@@ -388,6 +394,119 @@ fn render_steam_tools_panel(frame: &mut Frame, app: &App, area: Rect) {
             .wrap(Wrap { trim: true }),
         area,
     );
+}
+
+fn render_steam_hud_panel(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = &app.theme;
+    let lang = app.config.ui.language;
+    let lines = if let Some(game) = app.steam.selected_game() {
+        let hud = app.config.overlay_hud_for_app(Some(&game.app_id));
+        let scope = if app.config.has_overlay_game_profile(&game.app_id) {
+            lang.hud_scope_game()
+        } else {
+            lang.hud_scope_global()
+        };
+
+        vec![
+            Line::from(vec![
+                metric_label(theme, lang.hud_preset_label()),
+                metric_value(hud.layout.label(), theme.cyber_yellow),
+            ]),
+            Line::from(vec![
+                metric_label(theme, lang.hud_scope_label()),
+                metric_value(scope, theme.neon_cyan),
+            ]),
+            steam_hud_field_pair(
+                theme,
+                hud,
+                (OverlayHudField::FrameStats, "F", "FPS"),
+                (OverlayHudField::Gpu, "G", "GPU"),
+            ),
+            steam_hud_field_pair(
+                theme,
+                hud,
+                (OverlayHudField::Cpu, "C", "CPU"),
+                (OverlayHudField::Ram, "A", "RAM"),
+            ),
+            steam_hud_field_pair(
+                theme,
+                hud,
+                (OverlayHudField::Waste, "W", "WASTE"),
+                (OverlayHudField::Session, "Y", "SESSION"),
+            ),
+            steam_hud_field_pair(
+                theme,
+                hud,
+                (OverlayHudField::Profile, "R", "PROFILE"),
+                (OverlayHudField::Target, "T", "TARGET"),
+            ),
+            Line::from(vec![
+                keycap(theme, "H"),
+                Span::styled(lang.hud_preset_action(), Style::new().fg(theme.muted)),
+                keycap(theme, "X"),
+                Span::styled(lang.hud_reset_action(), Style::new().fg(theme.muted)),
+            ]),
+        ]
+    } else {
+        vec![
+            Line::from(vec![
+                metric_label(theme, "HUD"),
+                Span::styled(lang.none(), Style::new().fg(theme.muted)),
+            ]),
+            Line::from(vec![
+                keycap(theme, "S"),
+                Span::styled(
+                    lang.scan_steam_library(),
+                    Style::new().fg(theme.neon_cyan).bold(),
+                ),
+            ]),
+        ]
+    };
+
+    frame.render_widget(
+        Paragraph::new(Text::from(lines))
+            .block(accent_block(
+                theme,
+                lang.panel_steam_hud_profile(),
+                theme.neon_magenta,
+            ))
+            .wrap(Wrap { trim: true }),
+        area,
+    );
+}
+
+fn steam_hud_field_pair(
+    theme: &Theme,
+    hud: OverlayHudConfig,
+    left: (OverlayHudField, &'static str, &'static str),
+    right: (OverlayHudField, &'static str, &'static str),
+) -> Line<'static> {
+    let mut spans = steam_hud_field_spans(theme, hud, left.0, left.1, left.2);
+    spans.push(Span::styled("  ", Style::new().fg(theme.muted)));
+    spans.extend(steam_hud_field_spans(theme, hud, right.0, right.1, right.2));
+    Line::from(spans)
+}
+
+fn steam_hud_field_spans(
+    theme: &Theme,
+    hud: OverlayHudConfig,
+    field: OverlayHudField,
+    key: &'static str,
+    label: &'static str,
+) -> Vec<Span<'static>> {
+    let enabled = hud.field_enabled(field);
+    let state = if enabled { "ON " } else { "OFF" };
+    let color = if enabled {
+        theme.acid_green
+    } else {
+        theme.muted
+    };
+
+    vec![
+        keycap(theme, key),
+        Span::styled(format!(" {label:<7}"), Style::new().fg(theme.foreground)),
+        Span::styled(state, Style::new().fg(color).bold()),
+    ]
 }
 
 fn render_steam_runtime_panel(frame: &mut Frame, app: &App, area: Rect) {

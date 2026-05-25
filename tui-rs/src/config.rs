@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -5,9 +6,11 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::i18n::Language;
-use crate::overlay::{OverlayBackend, OverlayConfig};
+use crate::overlay::{
+    OverlayBackend, OverlayConfig, OverlayHudConfig, OverlayHudField, OverlayLayout,
+};
 
-const CONFIG_SCHEMA_VERSION: u32 = 2;
+const CONFIG_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone)]
 pub(crate) struct AppConfig {
@@ -18,6 +21,7 @@ pub(crate) struct AppConfig {
     aggressive: BoostProfile,
     pub(crate) telemetry: TelemetryConfig,
     pub(crate) overlay: OverlayConfig,
+    overlay_game_profiles: BTreeMap<String, OverlayHudConfig>,
     pub(crate) ui: UiConfig,
     pub(crate) status: String,
     migration_pending: bool,
@@ -60,6 +64,7 @@ struct ConfigFile {
     active_profile: Option<String>,
     telemetry: Option<TelemetryFile>,
     overlay: Option<OverlayFile>,
+    overlay_game_profiles: Option<BTreeMap<String, OverlayHudFile>>,
     ui: Option<UiFile>,
     profiles: Option<ProfilesFile>,
 }
@@ -76,6 +81,28 @@ struct OverlayFile {
     enabled: Option<bool>,
     backend: Option<String>,
     update_ms: Option<u64>,
+    layout: Option<String>,
+    show_frame_stats: Option<bool>,
+    show_gpu: Option<bool>,
+    show_cpu: Option<bool>,
+    show_ram: Option<bool>,
+    show_waste: Option<bool>,
+    show_session: Option<bool>,
+    show_profile: Option<bool>,
+    show_target: Option<bool>,
+}
+
+#[derive(Clone, Default, Deserialize)]
+struct OverlayHudFile {
+    layout: Option<String>,
+    show_frame_stats: Option<bool>,
+    show_gpu: Option<bool>,
+    show_cpu: Option<bool>,
+    show_ram: Option<bool>,
+    show_waste: Option<bool>,
+    show_session: Option<bool>,
+    show_profile: Option<bool>,
+    show_target: Option<bool>,
 }
 
 #[derive(Default, Deserialize)]
@@ -119,9 +146,7 @@ impl AppConfig {
             Ok(file) => {
                 let mut config = Self::from_file(file, path);
                 if config.migration_pending {
-                    config.persist(
-                        "config migrated: balanced profile keeps services running".to_string(),
-                    );
+                    config.persist("config migrated".to_string());
                 }
                 config
             }
@@ -239,19 +264,71 @@ impl AppConfig {
         }
     }
 
-    pub(crate) fn toggle_overlay_enabled(&mut self) {
-        self.overlay.enabled = !self.overlay.enabled;
-        let state = if self.overlay.enabled {
-            "enabled"
-        } else {
-            "disabled"
-        };
-        self.persist(format!("overlay: {state}"));
-    }
-
     pub(crate) fn cycle_profile(&mut self) {
         self.active_profile = self.active_profile.next();
         self.persist(format!("profile: {}", self.active_profile.as_str()));
+    }
+
+    pub(crate) fn overlay_hud_for_app(&self, app_id: Option<&str>) -> OverlayHudConfig {
+        app_id
+            .and_then(|app_id| self.overlay_game_profiles.get(app_id))
+            .copied()
+            .unwrap_or(self.overlay.hud)
+    }
+
+    pub(crate) fn overlay_game_profile_count(&self) -> usize {
+        self.overlay_game_profiles.len()
+    }
+
+    pub(crate) fn has_overlay_game_profile(&self, app_id: &str) -> bool {
+        normalized_app_id(Some(app_id))
+            .is_some_and(|app_id| self.overlay_game_profiles.contains_key(app_id))
+    }
+
+    pub(crate) fn cycle_overlay_layout(&mut self, app_id: Option<&str>) {
+        let scope = overlay_hud_scope(app_id);
+        let hud = self.overlay_hud_for_scope_mut(app_id);
+        hud.layout = hud.layout.next();
+        let layout = hud.layout.as_str().to_string();
+        self.persist(format!("overlay hud: {scope} layout {layout}"));
+    }
+
+    pub(crate) fn toggle_overlay_hud_field(
+        &mut self,
+        app_id: Option<&str>,
+        field: OverlayHudField,
+    ) {
+        let scope = overlay_hud_scope(app_id);
+        let hud = self.overlay_hud_for_scope_mut(app_id);
+        let enabled = hud.toggle(field);
+        self.persist(format!(
+            "overlay hud: {scope} {} {}",
+            field.key(),
+            if enabled { "on" } else { "off" }
+        ));
+    }
+
+    pub(crate) fn reset_overlay_hud_for_app(&mut self, app_id: &str) {
+        let Some(app_id) = normalized_app_id(Some(app_id)) else {
+            self.status = "overlay hud: invalid game appid".to_string();
+            return;
+        };
+
+        if self.overlay_game_profiles.remove(app_id).is_some() {
+            self.persist(format!("overlay hud: game:{app_id} reset"));
+        } else {
+            self.status = format!("overlay hud: game:{app_id} already global");
+        }
+    }
+
+    fn overlay_hud_for_scope_mut(&mut self, app_id: Option<&str>) -> &mut OverlayHudConfig {
+        let Some(app_id) = normalized_app_id(app_id) else {
+            return &mut self.overlay.hud;
+        };
+        let base = self.overlay_hud_for_app(Some(app_id));
+        self.overlay_game_profiles
+            .entry(app_id.to_string())
+            .or_insert(base)
     }
 
     fn from_file(file: ConfigFile, path: PathBuf) -> Self {
@@ -268,6 +345,16 @@ impl AppConfig {
         }
         if let Some(overlay) = file.overlay {
             config.overlay = config.overlay.with_override(overlay);
+        }
+        if let Some(game_profiles) = file.overlay_game_profiles {
+            let base_hud = config.overlay.hud;
+            config.overlay_game_profiles = game_profiles
+                .into_iter()
+                .filter_map(|(app_id, hud)| {
+                    let app_id = normalized_app_id(Some(&app_id))?.to_string();
+                    Some((app_id, base_hud.with_override(hud)))
+                })
+                .collect();
         }
         if let Some(ui) = file.ui {
             config.ui = config.ui.with_override(ui);
@@ -340,7 +427,21 @@ impl AppConfig {
                 enabled: self.overlay.enabled,
                 backend: self.overlay.backend.as_str().to_string(),
                 update_ms: self.overlay.update_rate.as_millis() as u64,
+                layout: self.overlay.hud.layout.as_str().to_string(),
+                show_frame_stats: self.overlay.hud.show_frame_stats,
+                show_gpu: self.overlay.hud.show_gpu,
+                show_cpu: self.overlay.hud.show_cpu,
+                show_ram: self.overlay.hud.show_ram,
+                show_waste: self.overlay.hud.show_waste,
+                show_session: self.overlay.hud.show_session,
+                show_profile: self.overlay.hud.show_profile,
+                show_target: self.overlay.hud.show_target,
             },
+            overlay_game_profiles: self
+                .overlay_game_profiles
+                .iter()
+                .map(|(app_id, hud)| (app_id.clone(), OverlayHudFileOut::from_hud(*hud)))
+                .collect(),
             ui: UiFileOut {
                 language: self.ui.language.code().to_string(),
             },
@@ -357,6 +458,12 @@ impl AppConfig {
             self.balanced.services.clear();
             self.migration_pending = true;
         }
+        if schema_version < 3 {
+            self.migration_pending = true;
+        }
+        if schema_version < 4 {
+            self.migration_pending = true;
+        }
     }
 }
 
@@ -370,6 +477,7 @@ impl Default for AppConfig {
             aggressive: BoostProfile::aggressive(),
             telemetry: TelemetryConfig::default(),
             overlay: OverlayConfig::default(),
+            overlay_game_profiles: BTreeMap::new(),
             ui: UiConfig::default(),
             status: "config defaults".to_string(),
             migration_pending: false,
@@ -584,6 +692,7 @@ struct ConfigFileOut {
     active_profile: String,
     telemetry: TelemetryFileOut,
     overlay: OverlayFileOut,
+    overlay_game_profiles: BTreeMap<String, OverlayHudFileOut>,
     ui: UiFileOut,
     profiles: ProfilesFileOut,
 }
@@ -600,6 +709,28 @@ struct OverlayFileOut {
     enabled: bool,
     backend: String,
     update_ms: u64,
+    layout: String,
+    show_frame_stats: bool,
+    show_gpu: bool,
+    show_cpu: bool,
+    show_ram: bool,
+    show_waste: bool,
+    show_session: bool,
+    show_profile: bool,
+    show_target: bool,
+}
+
+#[derive(Serialize)]
+struct OverlayHudFileOut {
+    layout: String,
+    show_frame_stats: bool,
+    show_gpu: bool,
+    show_cpu: bool,
+    show_ram: bool,
+    show_waste: bool,
+    show_session: bool,
+    show_profile: bool,
+    show_target: bool,
 }
 
 #[derive(Serialize)]
@@ -635,6 +766,22 @@ impl BoostProfileFileOut {
             hidden_processes: profile.hidden_processes.clone(),
             services: profile.services.clone(),
             processes: profile.processes.clone(),
+        }
+    }
+}
+
+impl OverlayHudFileOut {
+    fn from_hud(hud: OverlayHudConfig) -> Self {
+        Self {
+            layout: hud.layout.as_str().to_string(),
+            show_frame_stats: hud.show_frame_stats,
+            show_gpu: hud.show_gpu,
+            show_cpu: hud.show_cpu,
+            show_ram: hud.show_ram,
+            show_waste: hud.show_waste,
+            show_session: hud.show_session,
+            show_profile: hud.show_profile,
+            show_target: hud.show_target,
         }
     }
 }
@@ -679,7 +826,129 @@ impl OverlayConfig {
         if let Some(ms) = override_file.update_ms {
             self.update_rate = Duration::from_millis(ms.clamp(100, 2_000));
         }
+        self.hud = self.hud.with_override(override_file);
         self
+    }
+}
+
+impl OverlayHudConfig {
+    fn with_override(mut self, override_file: impl OverlayHudOverride) -> Self {
+        if let Some(layout) = override_file.layout().and_then(OverlayLayout::parse) {
+            self.layout = layout;
+        }
+        if let Some(value) = override_file.show_frame_stats() {
+            self.show_frame_stats = value;
+        }
+        if let Some(value) = override_file.show_gpu() {
+            self.show_gpu = value;
+        }
+        if let Some(value) = override_file.show_cpu() {
+            self.show_cpu = value;
+        }
+        if let Some(value) = override_file.show_ram() {
+            self.show_ram = value;
+        }
+        if let Some(value) = override_file.show_waste() {
+            self.show_waste = value;
+        }
+        if let Some(value) = override_file.show_session() {
+            self.show_session = value;
+        }
+        if let Some(value) = override_file.show_profile() {
+            self.show_profile = value;
+        }
+        if let Some(value) = override_file.show_target() {
+            self.show_target = value;
+        }
+        self
+    }
+}
+
+trait OverlayHudOverride {
+    fn layout(&self) -> Option<&str>;
+    fn show_frame_stats(&self) -> Option<bool>;
+    fn show_gpu(&self) -> Option<bool>;
+    fn show_cpu(&self) -> Option<bool>;
+    fn show_ram(&self) -> Option<bool>;
+    fn show_waste(&self) -> Option<bool>;
+    fn show_session(&self) -> Option<bool>;
+    fn show_profile(&self) -> Option<bool>;
+    fn show_target(&self) -> Option<bool>;
+}
+
+impl OverlayHudOverride for OverlayFile {
+    fn layout(&self) -> Option<&str> {
+        self.layout.as_deref()
+    }
+
+    fn show_frame_stats(&self) -> Option<bool> {
+        self.show_frame_stats
+    }
+
+    fn show_gpu(&self) -> Option<bool> {
+        self.show_gpu
+    }
+
+    fn show_cpu(&self) -> Option<bool> {
+        self.show_cpu
+    }
+
+    fn show_ram(&self) -> Option<bool> {
+        self.show_ram
+    }
+
+    fn show_waste(&self) -> Option<bool> {
+        self.show_waste
+    }
+
+    fn show_session(&self) -> Option<bool> {
+        self.show_session
+    }
+
+    fn show_profile(&self) -> Option<bool> {
+        self.show_profile
+    }
+
+    fn show_target(&self) -> Option<bool> {
+        self.show_target
+    }
+}
+
+impl OverlayHudOverride for OverlayHudFile {
+    fn layout(&self) -> Option<&str> {
+        self.layout.as_deref()
+    }
+
+    fn show_frame_stats(&self) -> Option<bool> {
+        self.show_frame_stats
+    }
+
+    fn show_gpu(&self) -> Option<bool> {
+        self.show_gpu
+    }
+
+    fn show_cpu(&self) -> Option<bool> {
+        self.show_cpu
+    }
+
+    fn show_ram(&self) -> Option<bool> {
+        self.show_ram
+    }
+
+    fn show_waste(&self) -> Option<bool> {
+        self.show_waste
+    }
+
+    fn show_session(&self) -> Option<bool> {
+        self.show_session
+    }
+
+    fn show_profile(&self) -> Option<bool> {
+        self.show_profile
+    }
+
+    fn show_target(&self) -> Option<bool> {
+        self.show_target
     }
 }
 
@@ -736,6 +1005,18 @@ fn copy_default_file(default_path: &Path, target_path: &Path) -> Option<PathBuf>
 
 fn strings(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_string()).collect()
+}
+
+fn normalized_app_id(app_id: Option<&str>) -> Option<&str> {
+    app_id.map(str::trim).filter(|app_id| {
+        !app_id.is_empty() && app_id.len() <= 32 && app_id.chars().all(|ch| ch.is_ascii_digit())
+    })
+}
+
+fn overlay_hud_scope(app_id: Option<&str>) -> String {
+    normalized_app_id(app_id)
+        .map(|app_id| format!("game:{app_id}"))
+        .unwrap_or_else(|| "global".to_string())
 }
 
 pub(crate) fn process_pattern_from_name(process_name: &str) -> String {
@@ -916,6 +1197,7 @@ mod tests {
                     enabled: Some(false),
                     backend: Some("rtss".to_string()),
                     update_ms: Some(75),
+                    ..OverlayFile::default()
                 }),
                 ..ConfigFile::default()
             },
@@ -925,6 +1207,108 @@ mod tests {
         assert!(!config.overlay.enabled);
         assert_eq!(config.overlay.backend, OverlayBackend::Rtss);
         assert_eq!(config.overlay.update_rate, Duration::from_millis(100));
+    }
+
+    #[test]
+    fn overlay_config_should_load_hud_settings() {
+        let config = AppConfig::from_file(
+            ConfigFile {
+                overlay: Some(OverlayFile {
+                    layout: Some("debug".to_string()),
+                    show_gpu: Some(false),
+                    show_target: Some(true),
+                    ..OverlayFile::default()
+                }),
+                ..ConfigFile::default()
+            },
+            PathBuf::from("config.toml"),
+        );
+
+        assert_eq!(config.overlay.hud.layout, OverlayLayout::Debug);
+        assert!(!config.overlay.hud.show_gpu);
+        assert!(config.overlay.hud.show_target);
+    }
+
+    #[test]
+    fn overlay_hud_for_app_should_prefer_game_profile() {
+        let config = AppConfig::from_file(
+            ConfigFile {
+                overlay: Some(OverlayFile {
+                    layout: Some("compact".to_string()),
+                    show_target: Some(false),
+                    ..OverlayFile::default()
+                }),
+                overlay_game_profiles: Some(BTreeMap::from([(
+                    "1091500".to_string(),
+                    OverlayHudFile {
+                        layout: Some("debug".to_string()),
+                        show_target: Some(true),
+                        ..OverlayHudFile::default()
+                    },
+                )])),
+                ..ConfigFile::default()
+            },
+            PathBuf::from("config.toml"),
+        );
+
+        assert_eq!(
+            config.overlay_hud_for_app(Some("1091500")).layout,
+            OverlayLayout::Debug
+        );
+        assert!(config.overlay_hud_for_app(Some("1091500")).show_target);
+    }
+
+    #[test]
+    fn overlay_hud_for_app_should_fallback_to_global_profile() {
+        let config = AppConfig::from_file(
+            ConfigFile {
+                overlay: Some(OverlayFile {
+                    layout: Some("compact".to_string()),
+                    ..OverlayFile::default()
+                }),
+                ..ConfigFile::default()
+            },
+            PathBuf::from("config.toml"),
+        );
+
+        assert_eq!(
+            config.overlay_hud_for_app(Some("999999")).layout,
+            OverlayLayout::Compact
+        );
+    }
+
+    #[test]
+    fn reset_overlay_hud_for_app_should_remove_game_profile() {
+        let dir =
+            std::env::temp_dir().join(format!("chaosgamemode-hud-reset-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("hud reset fixture dir should be writable");
+        let path = dir.join("config.toml");
+
+        let mut config = AppConfig::from_file(
+            ConfigFile {
+                overlay_game_profiles: Some(BTreeMap::from([(
+                    "1091500".to_string(),
+                    OverlayHudFile {
+                        layout: Some("debug".to_string()),
+                        show_target: Some(true),
+                        ..OverlayHudFile::default()
+                    },
+                )])),
+                ..ConfigFile::default()
+            },
+            path.clone(),
+        );
+
+        assert!(config.has_overlay_game_profile("1091500"));
+
+        config.reset_overlay_hud_for_app("1091500");
+
+        let contents = fs::read_to_string(&path).expect("hud reset config should be readable");
+        assert!(!config.has_overlay_game_profile("1091500"));
+        assert!(!contents.contains("[overlay_game_profiles.\"1091500\"]"));
+
+        fs::remove_dir_all(dir).expect("hud reset fixture dir should be removable");
     }
 
     #[test]

@@ -1280,13 +1280,6 @@ impl Language {
         "FRAME"
     }
 
-    pub(crate) const fn label_samples(self) -> &'static str {
-        match self {
-            Self::Spanish => "SAMPLES",
-            Self::English => "SAMPLES",
-        }
-    }
-
     pub(crate) const fn label_theme(self) -> &'static str {
         match self {
             Self::Spanish => "TEMA",
@@ -1484,8 +1477,8 @@ impl Language {
 
     pub(crate) const fn frames_waiting_samples(self) -> &'static str {
         match self {
-            Self::Spanish => "esperando samples",
-            Self::English => "waiting for samples",
+            Self::Spanish => "esperando FPS",
+            Self::English => "waiting for FPS",
         }
     }
 
@@ -2443,6 +2436,49 @@ impl Language {
         match self {
             Self::Spanish => "HERRAMIENTAS STEAM",
             Self::English => "STEAM TOOLS",
+        }
+    }
+
+    pub(crate) const fn panel_steam_hud_profile(self) -> &'static str {
+        match self {
+            Self::Spanish => "PERFIL HUD",
+            Self::English => "HUD PROFILE",
+        }
+    }
+
+    pub(crate) const fn hud_preset_label(self) -> &'static str {
+        "PRESET"
+    }
+
+    pub(crate) const fn hud_scope_label(self) -> &'static str {
+        match self {
+            Self::Spanish => "ALCANCE",
+            Self::English => "SCOPE",
+        }
+    }
+
+    pub(crate) const fn hud_scope_game(self) -> &'static str {
+        match self {
+            Self::Spanish => "juego",
+            Self::English => "game",
+        }
+    }
+
+    pub(crate) const fn hud_scope_global(self) -> &'static str {
+        "global"
+    }
+
+    pub(crate) const fn hud_preset_action(self) -> &'static str {
+        match self {
+            Self::Spanish => " preset  ",
+            Self::English => " preset  ",
+        }
+    }
+
+    pub(crate) const fn hud_reset_action(self) -> &'static str {
+        match self {
+            Self::Spanish => " reset",
+            Self::English => " reset",
         }
     }
 

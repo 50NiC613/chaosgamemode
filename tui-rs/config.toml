@@ -1,4 +1,4 @@
-config_version = 2
+config_version = 4
 active_profile = "balanced"
 
 [telemetry]
@@ -7,9 +7,20 @@ process_ms = 3000
 platform_ms = 15000
 
 [overlay]
-enabled = true
+enabled = false
 backend = "rtss"
 update_ms = 100
+layout = "mangohud"
+show_frame_stats = true
+show_gpu = true
+show_cpu = true
+show_ram = true
+show_waste = true
+show_session = true
+show_profile = true
+show_target = false
+
+[overlay_game_profiles]
 
 [ui]
 language = "es"

@@ -7,10 +7,15 @@ use ratatui::{
 };
 
 use super::components::*;
-use crate::app::{App, FrameEvent, FrameEventKind};
+use crate::app::{
+    App, FrameEvent, FrameEventKind, OverdriveProfilerFinding, OverdriveProfilerSeverity,
+    OverdriveProfilerSignal,
+};
 use crate::config::{BoostProfile, process_pattern_from_name};
+use crate::game_resolver::{FrameCandidateDecision, FrameCandidateDiagnostic};
 use crate::i18n::Language;
 use crate::metrics::{readiness_score, scaled_history};
+use crate::overlay::OverlayHudField;
 use crate::system::ProcessGroup;
 
 pub(super) fn render_processes(frame: &mut Frame, app: &App, area: Rect) {
@@ -926,7 +931,17 @@ pub(super) fn render_frames(frame: &mut Frame, app: &App, area: Rect) {
         render_frames_metrics_panel(frame, app, middle[0]);
         render_frames_trace_panel(frame, app, middle[1]);
 
-        render_frames_hardware_panel(frame, app, columns[2]);
+        let right = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(9),
+                Constraint::Length(11),
+                Constraint::Min(10),
+            ])
+            .split(columns[2]);
+        render_frames_hardware_panel(frame, app, right[0]);
+        render_frames_guard_panel(frame, app, right[1]);
+        render_frames_candidates_panel(frame, app, right[2]);
     } else {
         let columns = Layout::default()
             .direction(Direction::Horizontal)
@@ -943,14 +958,18 @@ pub(super) fn render_frames(frame: &mut Frame, app: &App, area: Rect) {
         let right = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(45),
+                Constraint::Percentage(38),
                 Constraint::Length(12),
+                Constraint::Length(9),
+                Constraint::Length(11),
                 Constraint::Min(8),
             ])
             .split(columns[1]);
         render_frames_trace_panel(frame, app, right[0]);
         render_frames_probe_panel(frame, app, right[1]);
         render_frames_hardware_panel(frame, app, right[2]);
+        render_frames_guard_panel(frame, app, right[3]);
+        render_frames_candidates_panel(frame, app, right[4]);
     }
 }
 
@@ -1127,10 +1146,6 @@ fn render_frames_metrics_panel(frame: &mut Frame, app: &App, area: Rect) {
                 format_frame_ms(app.frame_metrics.frame_time_ms),
                 theme.neon_cyan,
             ),
-        ]),
-        Line::from(vec![
-            metric_label(theme, lang.label_samples()),
-            metric_value(app.frame_metrics.samples.to_string(), theme.cyber_yellow),
         ]),
         Line::from(vec![
             metric_label(theme, lang.label_target()),
@@ -1430,6 +1445,374 @@ fn render_frames_hardware_panel(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(panel, area);
 }
 
+fn render_frames_guard_panel(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = &app.theme;
+    let lang = app.config.ui.language;
+    let mut lines = Vec::new();
+
+    if let Some(alert) = app.performance_alert.as_deref() {
+        lines.push(Line::from(vec![
+            metric_label(theme, lang.label_status()),
+            metric_value("ALERT", theme.hot_red),
+        ]));
+        lines.push(Line::from(vec![
+            metric_label(theme, "FPS"),
+            Span::styled(
+                crate::metrics::truncate(&localized_performance_alert(alert, lang), 36),
+                Style::new().fg(theme.hot_red),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            keycap(theme, "2"),
+            Span::styled(
+                match lang {
+                    Language::Spanish => " restaurar sistema ahora",
+                    Language::English => " restore system now",
+                },
+                Style::new().fg(theme.cyber_yellow),
+            ),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            metric_label(theme, lang.label_status()),
+            metric_value(
+                if app.last_overdrive.is_some() {
+                    "ARMED"
+                } else {
+                    "STANDBY"
+                },
+                if app.last_overdrive.is_some() {
+                    theme.cyber_yellow
+                } else {
+                    theme.muted
+                },
+            ),
+        ]));
+    }
+
+    if let Some(run) = &app.last_overdrive {
+        lines.push(Line::from(vec![
+            metric_label(theme, lang.profile_label()),
+            metric_value(
+                crate::metrics::truncate(&run.profile_name, 16),
+                theme.cyber_yellow,
+            ),
+            Span::styled(
+                format!(
+                    " {}",
+                    crate::metrics::format_duration(run.started_at.elapsed())
+                ),
+                Style::new().fg(theme.muted),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            metric_label(theme, "IMPACT"),
+            metric_value(
+                overdrive_impact_summary(run.before, run.after),
+                theme.neon_cyan,
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            metric_label(theme, "POWER"),
+            metric_value(
+                if run.set_high_performance {
+                    "high-performance"
+                } else {
+                    "unchanged"
+                },
+                if run.set_high_performance {
+                    theme.orange
+                } else {
+                    theme.muted
+                },
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            metric_label(theme, "SHELL"),
+            metric_value(
+                if run.kill_explorer {
+                    "explorer stopped"
+                } else {
+                    "explorer kept"
+                },
+                if run.kill_explorer {
+                    theme.hot_red
+                } else {
+                    theme.acid_green
+                },
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            metric_label(theme, "SCOPE"),
+            metric_value(
+                format!(
+                    "{} services / {} patterns",
+                    run.configured_services, run.configured_processes
+                ),
+                theme.muted,
+            ),
+        ]));
+        let findings = app.overdrive_profiler_findings();
+        lines.extend(
+            findings
+                .iter()
+                .filter(|finding| finding.signal != OverdriveProfilerSignal::Waiting)
+                .take(3)
+                .map(|finding| overdrive_profiler_line(theme, lang, finding)),
+        );
+        if lines.len() < area.height.saturating_sub(2) as usize + 1
+            && let Some(action) = run.actions.first()
+        {
+            lines.push(Line::from(vec![
+                metric_label(theme, "LAST"),
+                Span::styled(
+                    crate::metrics::truncate(&strip_action_marker(action), 38),
+                    Style::new().fg(theme.muted),
+                ),
+            ]));
+        }
+    } else {
+        lines.push(Line::from(Span::styled(
+            match lang {
+                Language::Spanish => "Overdrive guard se arma al lanzar con Overdrive",
+                Language::English => "Overdrive guard arms after Overdrive launch",
+            },
+            Style::new().fg(theme.muted),
+        )));
+    }
+
+    let panel = Paragraph::new(Text::from(lines))
+        .block(accent_block(theme, "PERFORMANCE GUARD", theme.hot_red))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(panel, area);
+}
+
+fn overdrive_profiler_line(
+    theme: &crate::theme::Theme,
+    lang: Language,
+    finding: &OverdriveProfilerFinding,
+) -> Line<'static> {
+    let color = overdrive_profiler_color(theme, finding.severity);
+    let (label, detail) = localized_overdrive_profiler_finding(finding, lang);
+    Line::from(vec![
+        Span::styled(format!("{:<6} ", "PROF"), Style::new().fg(color)),
+        Span::styled(format!("{:<17}", label), Style::new().fg(color)),
+        Span::styled(
+            crate::metrics::truncate(&detail, 34),
+            Style::new().fg(theme.muted),
+        ),
+    ])
+}
+
+fn overdrive_profiler_color(
+    theme: &crate::theme::Theme,
+    severity: OverdriveProfilerSeverity,
+) -> Color {
+    match severity {
+        OverdriveProfilerSeverity::Info => theme.neon_cyan,
+        OverdriveProfilerSeverity::Warning => theme.cyber_yellow,
+        OverdriveProfilerSeverity::Critical => theme.hot_red,
+    }
+}
+
+fn localized_overdrive_profiler_finding(
+    finding: &OverdriveProfilerFinding,
+    lang: Language,
+) -> (String, String) {
+    let value = finding.value.clone();
+    match (lang, finding.signal) {
+        (Language::Spanish, OverdriveProfilerSignal::Waiting) => {
+            ("esperando".to_string(), "lanza con Overdrive".to_string())
+        }
+        (Language::English, OverdriveProfilerSignal::Waiting) => {
+            ("waiting".to_string(), "launch with Overdrive".to_string())
+        }
+        (Language::Spanish, OverdriveProfilerSignal::FpsCollapse) => {
+            ("caida FPS".to_string(), value)
+        }
+        (Language::English, OverdriveProfilerSignal::FpsCollapse) => {
+            ("FPS collapse".to_string(), value)
+        }
+        (Language::Spanish, OverdriveProfilerSignal::ExplorerStopped) => (
+            "Explorer".to_string(),
+            "prueba mantenerlo activo".to_string(),
+        ),
+        (Language::English, OverdriveProfilerSignal::ExplorerStopped) => {
+            ("Explorer".to_string(), "try keeping it alive".to_string())
+        }
+        (Language::Spanish, OverdriveProfilerSignal::ServicesTouched) => {
+            ("servicios".to_string(), format!("{value}; prueba balanced"))
+        }
+        (Language::English, OverdriveProfilerSignal::ServicesTouched) => {
+            ("services".to_string(), format!("{value}; try balanced"))
+        }
+        (Language::Spanish, OverdriveProfilerSignal::LargeProcessScope) => (
+            "scope grande".to_string(),
+            format!("{value}; revisa targets"),
+        ),
+        (Language::English, OverdriveProfilerSignal::LargeProcessScope) => (
+            "large scope".to_string(),
+            format!("{value}; review targets"),
+        ),
+        (Language::Spanish, OverdriveProfilerSignal::RamPressure) => {
+            ("RAM alta".to_string(), value)
+        }
+        (Language::English, OverdriveProfilerSignal::RamPressure) => {
+            ("RAM pressure".to_string(), value)
+        }
+        (Language::Spanish, OverdriveProfilerSignal::GpuUnderutilized) => {
+            ("GPU baja".to_string(), format!("{value}; mira CPU/driver"))
+        }
+        (Language::English, OverdriveProfilerSignal::GpuUnderutilized) => {
+            ("GPU low".to_string(), format!("{value}; check CPU/driver"))
+        }
+        (Language::Spanish, OverdriveProfilerSignal::CpuSaturated) => {
+            ("CPU alta".to_string(), value)
+        }
+        (Language::English, OverdriveProfilerSignal::CpuSaturated) => {
+            ("CPU high".to_string(), value)
+        }
+        (Language::Spanish, OverdriveProfilerSignal::LowCleanupImpact) => {
+            ("poco impacto".to_string(), value)
+        }
+        (Language::English, OverdriveProfilerSignal::LowCleanupImpact) => {
+            ("low impact".to_string(), value)
+        }
+        (Language::Spanish, OverdriveProfilerSignal::RestoreAvailable) => {
+            ("restaurar".to_string(), value)
+        }
+        (Language::English, OverdriveProfilerSignal::RestoreAvailable) => {
+            ("restore".to_string(), value)
+        }
+        (Language::Spanish, OverdriveProfilerSignal::Healthy) => ("estable".to_string(), value),
+        (Language::English, OverdriveProfilerSignal::Healthy) => ("healthy".to_string(), value),
+    }
+}
+
+fn overdrive_impact_summary(
+    before: crate::app::OverdriveImpact,
+    after: crate::app::OverdriveImpact,
+) -> String {
+    format!(
+        "{:.0}->{:.0}MB / {}->{}",
+        before.waste_mb, after.waste_mb, before.target_groups, after.target_groups
+    )
+}
+
+fn strip_action_marker(action: &str) -> String {
+    action
+        .trim()
+        .trim_start_matches(|ch: char| !ch.is_ascii_alphanumeric())
+        .trim()
+        .to_string()
+}
+
+fn render_frames_candidates_panel(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = &app.theme;
+    let lang = app.config.ui.language;
+    let max_lines = area.height.saturating_sub(2).max(1) as usize;
+
+    let lines = if app.frame_candidates.is_empty() {
+        let message = if app.session.active.is_some() {
+            match lang {
+                Language::Spanish => "Esperando proceso del juego o FPS de RTSS",
+                Language::English => "Waiting for game process or RTSS FPS",
+            }
+        } else {
+            match lang {
+                Language::Spanish => "Abre un juego Steam para inspeccionar candidatos",
+                Language::English => "Launch a Steam game to inspect candidates",
+            }
+        };
+        vec![Line::from(Span::styled(
+            message,
+            Style::new().fg(theme.muted),
+        ))]
+    } else {
+        app.frame_candidates
+            .iter()
+            .take(max_lines)
+            .map(|candidate| frame_candidate_line(theme, candidate, app))
+            .collect()
+    };
+
+    let panel = Paragraph::new(Text::from(lines))
+        .block(accent_block(
+            theme,
+            format!("RTSS CANDIDATES {}", app.frame_candidates.len()),
+            theme.neon_cyan,
+        ))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(panel, area);
+}
+
+fn frame_candidate_line(
+    theme: &crate::theme::Theme,
+    candidate: &FrameCandidateDiagnostic,
+    app: &App,
+) -> Line<'static> {
+    let is_current = app
+        .frame_metrics
+        .process_name
+        .as_deref()
+        .is_some_and(|target| target.eq_ignore_ascii_case(&candidate.process_name));
+    let label = if is_current {
+        "LOCK"
+    } else {
+        frame_candidate_label(candidate.decision)
+    };
+    let color = if is_current {
+        theme.acid_green
+    } else {
+        frame_candidate_color(theme, candidate.decision)
+    };
+    let memory = candidate
+        .memory_mb
+        .map(|memory| format!("{memory:.0}MB"))
+        .unwrap_or_else(|| "--MB".to_string());
+    Line::from(vec![
+        Span::styled(format!("{label:<6} "), Style::new().fg(color)),
+        Span::styled(
+            format!(
+                "{:<22}",
+                crate::metrics::truncate(&candidate.process_name, 22)
+            ),
+            Style::new().fg(if is_current {
+                theme.acid_green
+            } else {
+                theme.foreground
+            }),
+        ),
+        Span::styled(
+            format!(" {:>3} ", candidate.score.clamp(-99, 999)),
+            Style::new().fg(theme.cyber_yellow),
+        ),
+        Span::styled(format!("{memory:<7} "), Style::new().fg(theme.muted)),
+        Span::styled(
+            crate::metrics::truncate(&candidate.reason, 24),
+            Style::new().fg(theme.muted),
+        ),
+    ])
+}
+
+fn frame_candidate_label(decision: FrameCandidateDecision) -> &'static str {
+    match decision {
+        FrameCandidateDecision::Accepted => "ACCEPT",
+        FrameCandidateDecision::Probing => "PROBE",
+        FrameCandidateDecision::Watching => "WATCH",
+        FrameCandidateDecision::Rejected => "REJECT",
+    }
+}
+
+fn frame_candidate_color(theme: &crate::theme::Theme, decision: FrameCandidateDecision) -> Color {
+    match decision {
+        FrameCandidateDecision::Accepted => theme.acid_green,
+        FrameCandidateDecision::Probing => theme.cyber_yellow,
+        FrameCandidateDecision::Watching => theme.neon_cyan,
+        FrameCandidateDecision::Rejected => theme.hot_red,
+    }
+}
+
 fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
     let lang = app.config.ui.language;
@@ -1530,21 +1913,6 @@ fn render_frames_probe_panel(frame: &mut Frame, app: &App, area: Rect) {
             ),
         ]));
     }
-    lines.extend([
-        Line::from(""),
-        Line::from(vec![
-            keycap(theme, "R"),
-            Span::styled(format!(" {}  ", lang.probe()), Style::new().fg(theme.muted)),
-            keycap(theme, "S-F12"),
-            Span::styled(
-                format!(" {}  ", lang.overlay()),
-                Style::new().fg(theme.muted),
-            ),
-            keycap(theme, "2"),
-            Span::styled(format!(" {}", lang.restore()), Style::new().fg(theme.muted)),
-        ]),
-    ]);
-
     let panel = Paragraph::new(Text::from(lines))
         .block(accent_block(theme, "HOOK STATUS", theme.neon_magenta))
         .wrap(Wrap { trim: true });
@@ -1631,6 +1999,10 @@ fn localized_overlay_status(message: &str, lang: Language) -> String {
             Language::Spanish => "RTSS overlay activo".to_string(),
             Language::English => message.to_string(),
         },
+        "RTSS overlay enabling" => match lang {
+            Language::Spanish => "RTSS overlay activando".to_string(),
+            Language::English => message.to_string(),
+        },
         "RTSS overlay armed; waiting for Steam game" => match lang {
             Language::Spanish => "RTSS overlay armado; esperando juego Steam".to_string(),
             Language::English => message.to_string(),
@@ -1644,6 +2016,13 @@ fn localized_overlay_status(message: &str, lang: Language) -> String {
 }
 
 fn localized_performance_alert(message: &str, lang: Language) -> String {
+    if let Some(rest) = message.strip_prefix("Overdrive FPS collapse: ") {
+        return match lang {
+            Language::Spanish => format!("Overdrive bajo rendimiento: {rest}"),
+            Language::English => message.to_string(),
+        };
+    }
+
     match message {
         "Overdrive FPS collapse; press 2 to restore" => match lang {
             Language::Spanish => "Overdrive bajo 10 FPS; pulsa 2 para restaurar".to_string(),
@@ -1678,13 +2057,6 @@ fn frame_hook_status(app: &App, lang: Language) -> String {
         return match lang {
             Language::Spanish => format!("live {:.0} FPS", fps),
             Language::English => format!("live {:.0} FPS", fps),
-        };
-    }
-
-    if app.frame_metrics.samples > 0 {
-        return match lang {
-            Language::Spanish => format!("{} samples", app.frame_metrics.samples),
-            Language::English => format!("{} samples", app.frame_metrics.samples),
         };
     }
 
@@ -2066,10 +2438,6 @@ fn render_system_graphics_panel(frame: &mut Frame, app: &App, area: Rect) {
                 ),
             ]),
             Line::from(vec![
-                metric_label(theme, lang.label_samples()),
-                metric_value(app.frame_metrics.samples.to_string(), theme.cyber_yellow),
-            ]),
-            Line::from(vec![
                 metric_label(theme, "TARGET"),
                 Span::styled(
                     crate::metrics::truncate(
@@ -2191,19 +2559,37 @@ pub(super) fn render_history(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 pub(super) fn render_settings(frame: &mut Frame, app: &App, area: Rect) {
+    if area.width >= 180 {
+        let columns = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+                Constraint::Percentage(25),
+            ])
+            .split(area);
+
+        render_settings_config(frame, app, columns[0]);
+        render_settings_hud(frame, app, columns[1]);
+        render_settings_integrations(frame, app, columns[2]);
+        render_settings_runtime(frame, app, columns[3]);
+        return;
+    }
+
     if area.width >= 150 {
         let columns = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Percentage(31),
-                Constraint::Percentage(37),
-                Constraint::Percentage(32),
+                Constraint::Percentage(34),
+                Constraint::Percentage(35),
             ])
             .split(area);
 
         render_settings_config(frame, app, columns[0]);
-        render_settings_integrations(frame, app, columns[1]);
-        render_settings_runtime(frame, app, columns[2]);
+        render_settings_hud(frame, app, columns[1]);
+        render_settings_integrations(frame, app, columns[2]);
         return;
     }
 
@@ -2213,7 +2599,7 @@ pub(super) fn render_settings(frame: &mut Frame, app: &App, area: Rect) {
         .split(area);
 
     render_settings_config(frame, app, columns[0]);
-    render_settings_integrations(frame, app, columns[1]);
+    render_settings_hud(frame, app, columns[1]);
 }
 
 fn render_settings_config(frame: &mut Frame, app: &App, area: Rect) {
@@ -2308,6 +2694,134 @@ fn render_settings_config(frame: &mut Frame, app: &App, area: Rect) {
         .block(accent_block(theme, lang.panel_settings(), theme.blue))
         .wrap(Wrap { trim: true });
     frame.render_widget(panel, area);
+}
+
+fn render_settings_hud(frame: &mut Frame, app: &App, area: Rect) {
+    let theme = &app.theme;
+    let lang = app.config.ui.language;
+    let active_app_id = app.session.active_app_id();
+    let hud = app.config.overlay_hud_for_app(active_app_id);
+    let scope = overlay_hud_scope_label(app, lang);
+    let fields_hint = match lang {
+        Language::Spanish => "enciende o apaga datos del OSD",
+        Language::English => "toggle OSD data fields",
+    };
+
+    let lines = vec![
+        Line::from(vec![
+            metric_label(theme, "HUD"),
+            metric_value(hud.layout.label(), theme.cyber_yellow),
+        ]),
+        Line::from(vec![
+            metric_label(theme, "MODE"),
+            metric_value(overlay_config_label(app, lang), overlay_config_color(app)),
+        ]),
+        Line::from(vec![
+            metric_label(theme, "SCOPE"),
+            Span::styled(scope, Style::new().fg(theme.neon_cyan).bold()),
+        ]),
+        Line::from(vec![
+            metric_label(theme, "SAVED"),
+            metric_value(
+                format!("{} profiles", app.config.overlay_game_profile_count()),
+                theme.muted,
+            ),
+        ]),
+        Line::from(vec![
+            metric_label(theme, "RTSS"),
+            Span::styled(
+                crate::metrics::truncate(
+                    &localized_overlay_status(&app.overlay_status.message, lang),
+                    32,
+                ),
+                Style::new().fg(overlay_status_color(app)),
+            ),
+        ]),
+        Line::from(""),
+        command_line(
+            theme,
+            "H",
+            match lang {
+                Language::Spanish => "Preset HUD",
+                Language::English => "HUD preset",
+            },
+            match lang {
+                Language::Spanish => "activo: juego si hay sesion",
+                Language::English => "active: game when session exists",
+            },
+        ),
+        command_line(
+            theme,
+            "D",
+            match lang {
+                Language::Spanish => "Detalles FPS",
+                Language::English => "FPS details",
+            },
+            match lang {
+                Language::Spanish => "avg, 1% low y frametime",
+                Language::English => "avg, 1% low and frametime",
+            },
+        ),
+        command_line(
+            theme,
+            "S-F12/O",
+            lang.command_toggle_overlay(),
+            lang.command_toggle_overlay_detail(),
+        ),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            fields_hint,
+            Style::new().fg(theme.muted).bold(),
+        )]),
+        hud_field_line(theme, hud, OverlayHudField::FrameStats, "D", "FPS DETAIL"),
+        hud_field_line(theme, hud, OverlayHudField::Gpu, "G", "GPU"),
+        hud_field_line(theme, hud, OverlayHudField::Cpu, "C", "CPU"),
+        hud_field_line(theme, hud, OverlayHudField::Ram, "A", "RAM"),
+        hud_field_line(theme, hud, OverlayHudField::Waste, "W", "WASTE"),
+        hud_field_line(theme, hud, OverlayHudField::Session, "S", "SESSION"),
+        hud_field_line(theme, hud, OverlayHudField::Profile, "P", "PROFILE"),
+        hud_field_line(theme, hud, OverlayHudField::Target, "T", "TARGET"),
+    ];
+
+    let panel = Paragraph::new(Text::from(lines))
+        .block(accent_block(theme, "HUD / OSD", theme.neon_magenta))
+        .wrap(Wrap { trim: true });
+    frame.render_widget(panel, area);
+}
+
+fn overlay_hud_scope_label(app: &App, lang: Language) -> String {
+    app.session.active.as_ref().map_or_else(
+        || match lang {
+            Language::Spanish => "GLOBAL default".to_string(),
+            Language::English => "GLOBAL default".to_string(),
+        },
+        |session| match lang {
+            Language::Spanish => format!("JUEGO {}", crate::metrics::truncate(&session.name, 20)),
+            Language::English => format!("GAME {}", crate::metrics::truncate(&session.name, 20)),
+        },
+    )
+}
+
+fn hud_field_line(
+    theme: &crate::theme::Theme,
+    hud: crate::overlay::OverlayHudConfig,
+    field: OverlayHudField,
+    key: &'static str,
+    label: &'static str,
+) -> Line<'static> {
+    let enabled = hud.field_enabled(field);
+    let state = if enabled { "ON " } else { "OFF" };
+    let color = if enabled {
+        theme.acid_green
+    } else {
+        theme.muted
+    };
+
+    Line::from(vec![
+        keycap(theme, key),
+        Span::styled(format!(" {label:<10} "), Style::new().fg(theme.foreground)),
+        Span::styled(state, Style::new().fg(color).bold()),
+    ])
 }
 
 fn render_settings_runtime(frame: &mut Frame, app: &App, area: Rect) {

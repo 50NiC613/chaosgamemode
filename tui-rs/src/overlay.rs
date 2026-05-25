@@ -9,11 +9,44 @@ pub(crate) struct OverlayConfig {
     pub(crate) enabled: bool,
     pub(crate) backend: OverlayBackend,
     pub(crate) update_rate: Duration,
+    pub(crate) hud: OverlayHudConfig,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OverlayBackend {
     Rtss,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OverlayLayout {
+    Compact,
+    MangoHud,
+    Debug,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OverlayHudField {
+    FrameStats,
+    Gpu,
+    Cpu,
+    Ram,
+    Waste,
+    Session,
+    Profile,
+    Target,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct OverlayHudConfig {
+    pub(crate) layout: OverlayLayout,
+    pub(crate) show_frame_stats: bool,
+    pub(crate) show_gpu: bool,
+    pub(crate) show_cpu: bool,
+    pub(crate) show_ram: bool,
+    pub(crate) show_waste: bool,
+    pub(crate) show_session: bool,
+    pub(crate) show_profile: bool,
+    pub(crate) show_target: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -38,6 +71,7 @@ pub(crate) struct OverlaySnapshot {
     pub(crate) gpu_usage_pct: Option<u16>,
     pub(crate) gpu_temp_c: Option<f32>,
     pub(crate) waste_mb: f64,
+    pub(crate) hud: OverlayHudConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -58,6 +92,23 @@ impl Default for OverlayConfig {
             enabled: true,
             backend: OverlayBackend::Rtss,
             update_rate: Duration::from_millis(100),
+            hud: OverlayHudConfig::default(),
+        }
+    }
+}
+
+impl Default for OverlayHudConfig {
+    fn default() -> Self {
+        Self {
+            layout: OverlayLayout::MangoHud,
+            show_frame_stats: true,
+            show_gpu: true,
+            show_cpu: true,
+            show_ram: true,
+            show_waste: true,
+            show_session: true,
+            show_profile: true,
+            show_target: false,
         }
     }
 }
@@ -73,6 +124,91 @@ impl OverlayBackend {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Rtss => "rtss",
+        }
+    }
+}
+
+impl OverlayLayout {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value
+            .trim()
+            .to_ascii_lowercase()
+            .replace(['_', '-'], "")
+            .as_str()
+        {
+            "compact" => Some(Self::Compact),
+            "mangohud" | "mango" => Some(Self::MangoHud),
+            "debug" | "diagnostic" => Some(Self::Debug),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Compact => "compact",
+            Self::MangoHud => "mangohud",
+            Self::Debug => "debug",
+        }
+    }
+
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Compact => "Compact",
+            Self::MangoHud => "MangoHUD",
+            Self::Debug => "Debug",
+        }
+    }
+
+    pub(crate) const fn next(self) -> Self {
+        match self {
+            Self::Compact => Self::MangoHud,
+            Self::MangoHud => Self::Debug,
+            Self::Debug => Self::Compact,
+        }
+    }
+}
+
+impl OverlayHudField {
+    pub(crate) const fn key(self) -> &'static str {
+        match self {
+            Self::FrameStats => "frame_stats",
+            Self::Gpu => "gpu",
+            Self::Cpu => "cpu",
+            Self::Ram => "ram",
+            Self::Waste => "waste",
+            Self::Session => "session",
+            Self::Profile => "profile",
+            Self::Target => "target",
+        }
+    }
+}
+
+impl OverlayHudConfig {
+    pub(crate) fn toggle(&mut self, field: OverlayHudField) -> bool {
+        let value = match field {
+            OverlayHudField::FrameStats => &mut self.show_frame_stats,
+            OverlayHudField::Gpu => &mut self.show_gpu,
+            OverlayHudField::Cpu => &mut self.show_cpu,
+            OverlayHudField::Ram => &mut self.show_ram,
+            OverlayHudField::Waste => &mut self.show_waste,
+            OverlayHudField::Session => &mut self.show_session,
+            OverlayHudField::Profile => &mut self.show_profile,
+            OverlayHudField::Target => &mut self.show_target,
+        };
+        *value = !*value;
+        *value
+    }
+
+    pub(crate) const fn field_enabled(self, field: OverlayHudField) -> bool {
+        match field {
+            OverlayHudField::FrameStats => self.show_frame_stats,
+            OverlayHudField::Gpu => self.show_gpu,
+            OverlayHudField::Cpu => self.show_cpu,
+            OverlayHudField::Ram => self.show_ram,
+            OverlayHudField::Waste => self.show_waste,
+            OverlayHudField::Session => self.show_session,
+            OverlayHudField::Profile => self.show_profile,
+            OverlayHudField::Target => self.show_target,
         }
     }
 }
@@ -100,6 +236,7 @@ impl OverlaySnapshot {
             gpu_usage_pct: None,
             gpu_temp_c: None,
             waste_mb: 0.0,
+            hud: OverlayHudConfig::default(),
         }
     }
 
@@ -135,7 +272,9 @@ fn run_overlay_loop(
 ) {
     let mut rtss = RtssOverlay::new();
     let mut overlay_visible = false;
+    let mut last_enabled = false;
     let mut last_status = String::new();
+    let mut last_text = String::new();
     let mut last_update = Instant::now() - config.update_rate;
 
     let _ = status_tx.send(OverlayStatus::disabled(config.backend));
@@ -156,16 +295,29 @@ fn run_overlay_loop(
             snapshot = pending;
         }
 
-        if last_update.elapsed() < config.update_rate && snapshot.enabled {
+        let enabled_changed = snapshot.enabled != last_enabled;
+        let overlay_text = snapshot.enabled.then(|| format_overlay_text(&snapshot));
+
+        if snapshot.enabled && !enabled_changed && last_update.elapsed() < config.update_rate {
             continue;
         }
+
+        if snapshot.enabled
+            && !enabled_changed
+            && overlay_text.as_deref() == Some(last_text.as_str())
+        {
+            continue;
+        }
+
         last_update = Instant::now();
 
         let status = if snapshot.enabled {
             match snapshot.backend {
-                OverlayBackend::Rtss => match rtss.update(&format_overlay_text(&snapshot)) {
+                OverlayBackend::Rtss => match rtss.update(overlay_text.as_deref().unwrap_or("")) {
                     Ok(()) => {
                         overlay_visible = true;
+                        last_enabled = true;
+                        last_text = overlay_text.unwrap_or_default();
                         OverlayStatus {
                             active: true,
                             backend: OverlayBackend::Rtss,
@@ -174,6 +326,8 @@ fn run_overlay_loop(
                     }
                     Err(message) => {
                         overlay_visible = false;
+                        last_enabled = false;
+                        last_text.clear();
                         OverlayStatus {
                             active: false,
                             backend: OverlayBackend::Rtss,
@@ -183,10 +337,12 @@ fn run_overlay_loop(
                 },
             }
         } else {
-            if overlay_visible {
+            if overlay_visible || last_enabled {
                 let _ = rtss.clear();
                 overlay_visible = false;
             }
+            last_enabled = false;
+            last_text.clear();
             if snapshot.armed {
                 OverlayStatus {
                     active: false,
@@ -206,51 +362,93 @@ fn run_overlay_loop(
 }
 
 fn format_overlay_text(snapshot: &OverlaySnapshot) -> String {
+    match snapshot.hud.layout {
+        OverlayLayout::Compact => format_compact_overlay_text(snapshot),
+        OverlayLayout::MangoHud => format_mangohud_overlay_text(snapshot),
+        OverlayLayout::Debug => format_debug_overlay_text(snapshot),
+    }
+}
+
+fn format_compact_overlay_text(snapshot: &OverlaySnapshot) -> String {
     let game = snapshot
         .game_name
         .as_deref()
         .map(shorten_game_name)
-        .unwrap_or_else(|| "Steam game".to_string());
-    let process = snapshot
-        .process_name
-        .as_deref()
-        .map(shorten_process_name)
-        .unwrap_or_else(|| "resolving".to_string());
-
+        .unwrap_or_else(|| "Game".to_string());
     let mode = overlay_mode(snapshot);
-    let gpu = snapshot
-        .gpu_usage_pct
-        .map(|value| format!("{value:>3}%"))
-        .unwrap_or_else(|| " --%".to_string());
-    let gpu_temp = snapshot
-        .gpu_temp_c
-        .map(|value| format!("{value:.0}C"))
-        .unwrap_or_else(|| "--C".to_string());
-    let session = snapshot
-        .session_elapsed
-        .map(format_duration)
-        .unwrap_or_else(|| "--:--:--".to_string());
-    let profile = shorten(&snapshot.profile_name, 10);
-    let run_mode = if snapshot.overdrive { "ODRV" } else { "NORM" };
-    let waste = snapshot.waste_mb.round().clamp(0.0, 99_999.0) as u32;
+    let mut lines = vec![game];
 
-    let mut lines = vec![
-        format!("CPM {mode:<4}  {game}"),
-        overlay_frame_line(snapshot),
-        format!(
-            "GPU {gpu} {gpu_temp}  CPU {:>3}%  RAM {:>3}%",
-            snapshot.cpu_usage.round().clamp(0.0, 100.0) as u16,
-            snapshot.ram_usage_pct,
-        ),
-        format!("{session}  {run_mode} {profile}  WASTE {waste}MB"),
-        format!("TARGET {process}"),
-    ];
-
-    if let Some(alert) = snapshot.performance_alert.as_deref() {
-        lines.push(format!("SAFE {}", shorten(alert, 48)));
+    if let Some(system) = compact_system_line(snapshot) {
+        lines.push(system);
+    }
+    lines.push(overlay_frame_line(snapshot, snapshot.hud.show_frame_stats));
+    if let Some(summary) = compact_summary_line(snapshot, mode) {
+        lines.push(summary);
     }
 
-    lines.join("\n")
+    if let Some(alert) = snapshot.performance_alert.as_deref() {
+        lines.push(format!("GUARD {}", shorten(alert, 42)));
+    }
+
+    join_overlay_lines(lines)
+}
+
+fn format_mangohud_overlay_text(snapshot: &OverlaySnapshot) -> String {
+    let mut lines = vec![
+        snapshot
+            .game_name
+            .as_deref()
+            .map(shorten_game_name)
+            .unwrap_or_else(|| "Game".to_string()),
+    ];
+
+    if snapshot.hud.show_gpu {
+        lines.push(gpu_line(snapshot));
+    }
+    if snapshot.hud.show_cpu {
+        lines.push(cpu_line(snapshot));
+    }
+    if snapshot.hud.show_ram {
+        lines.push(ram_line(snapshot));
+    }
+    lines.push(overlay_frame_line(snapshot, snapshot.hud.show_frame_stats));
+
+    if let Some(summary) = compact_summary_line(snapshot, overlay_mode(snapshot)) {
+        lines.push(summary);
+    }
+    if snapshot.hud.show_target {
+        lines.push(target_line(snapshot));
+    }
+    if let Some(alert) = snapshot.performance_alert.as_deref() {
+        lines.push(format!("GUARD {}", shorten(alert, 42)));
+    }
+
+    join_overlay_lines(lines)
+}
+
+fn format_debug_overlay_text(snapshot: &OverlaySnapshot) -> String {
+    let game = snapshot
+        .game_name
+        .as_deref()
+        .map(shorten_game_name)
+        .unwrap_or_else(|| "Game".to_string());
+    let mut lines = vec![
+        format!("CPM {} {game}", overlay_mode(snapshot)),
+        overlay_frame_line(snapshot, true),
+    ];
+
+    if let Some(system) = compact_system_line(snapshot) {
+        lines.push(system);
+    }
+    if let Some(summary) = compact_summary_line(snapshot, overlay_mode(snapshot)) {
+        lines.push(summary);
+    }
+    lines.push(target_line(snapshot));
+    if let Some(alert) = snapshot.performance_alert.as_deref() {
+        lines.push(format!("GUARD {}", shorten(alert, 42)));
+    }
+
+    join_overlay_lines(lines)
 }
 
 fn overlay_mode(snapshot: &OverlaySnapshot) -> &'static str {
@@ -263,25 +461,117 @@ fn overlay_mode(snapshot: &OverlaySnapshot) -> &'static str {
     }
 }
 
-fn overlay_frame_line(snapshot: &OverlaySnapshot) -> String {
-    let Some(fps) = snapshot.fps else {
-        return format!(
-            "FPS SYNC  {}",
-            shorten_overlay_status(&snapshot.frame_status, 35)
+fn compact_system_line(snapshot: &OverlaySnapshot) -> Option<String> {
+    let mut parts = Vec::new();
+    if snapshot.hud.show_gpu {
+        parts.push(gpu_line(snapshot));
+    }
+    if snapshot.hud.show_cpu {
+        parts.push(cpu_line(snapshot));
+    }
+    if snapshot.hud.show_ram {
+        parts.push(ram_line(snapshot));
+    }
+    if snapshot.hud.show_waste {
+        parts.push(waste_line(snapshot));
+    }
+    (!parts.is_empty()).then(|| parts.join("  "))
+}
+
+fn compact_summary_line(snapshot: &OverlaySnapshot, mode: &str) -> Option<String> {
+    let mut parts = Vec::new();
+    if snapshot.hud.show_session {
+        parts.push(
+            snapshot
+                .session_elapsed
+                .map(format_duration)
+                .unwrap_or_else(|| "--:--:--".to_string()),
         );
+    }
+    let run_mode = if snapshot.overdrive { "ODRV" } else { "NORM" };
+    if snapshot.hud.show_profile {
+        parts.push(format!(
+            "{run_mode} {}",
+            shorten(&snapshot.profile_name, 10)
+        ));
+    }
+    parts.push(mode.to_string());
+    if snapshot.hud.show_target {
+        parts.push(target_line(snapshot));
+    }
+    (!parts.is_empty()).then(|| parts.join("  "))
+}
+
+fn gpu_line(snapshot: &OverlaySnapshot) -> String {
+    let gpu = snapshot
+        .gpu_usage_pct
+        .map(|value| format!("{value:>3}%"))
+        .unwrap_or_else(|| " --%".to_string());
+    let gpu_temp = snapshot
+        .gpu_temp_c
+        .map(|value| format!("{value:.0}C"))
+        .unwrap_or_else(|| "--C".to_string());
+    format!("GPU {gpu} {gpu_temp}")
+}
+
+fn cpu_line(snapshot: &OverlaySnapshot) -> String {
+    format!(
+        "CPU {:>3}%",
+        snapshot.cpu_usage.round().clamp(0.0, 100.0) as u16,
+    )
+}
+
+fn ram_line(snapshot: &OverlaySnapshot) -> String {
+    format!("RAM {:>3}%", snapshot.ram_usage_pct)
+}
+
+fn waste_line(snapshot: &OverlaySnapshot) -> String {
+    let waste = snapshot.waste_mb.round().clamp(0.0, 99_999.0) as u32;
+    format!("WASTE {waste}MB")
+}
+
+fn target_line(snapshot: &OverlaySnapshot) -> String {
+    let target = snapshot
+        .process_name
+        .as_deref()
+        .map(shorten_process_name)
+        .unwrap_or_else(|| shorten_overlay_status(&snapshot.frame_status, 24));
+    format!("TARGET {target}")
+}
+
+fn overlay_frame_line(snapshot: &OverlaySnapshot, show_details: bool) -> String {
+    let Some(fps) = snapshot.fps else {
+        let target = snapshot
+            .process_name
+            .as_deref()
+            .map(shorten_process_name)
+            .unwrap_or_else(|| shorten_overlay_status(&snapshot.frame_status, 24));
+        return format!("FPS SYNC  {target}");
     };
 
     let avg = snapshot.average_fps.or(Some(fps));
     let low = snapshot.low_1_fps.or(Some(fps));
     let frame = snapshot.frame_time_ms;
 
-    format!(
-        "FPS {}  AVG {}  1%L {}  FT {}ms",
-        format_fps(Some(fps)),
-        format_fps(avg),
-        format_fps(low),
-        format_ms(frame),
-    )
+    if show_details {
+        format!(
+            "FPS {}  AVG {}  1%L {}  FT {} ms",
+            format_fps(Some(fps)),
+            format_fps(avg),
+            format_fps(low),
+            format_ms(frame),
+        )
+    } else {
+        format!("FPS {}  FT {} ms", format_fps(Some(fps)), format_ms(frame))
+    }
+}
+
+fn join_overlay_lines(lines: Vec<String>) -> String {
+    let mut text = lines.join("\n");
+    while text.len() >= 255 {
+        text.pop();
+    }
+    text
 }
 
 fn format_fps(value: Option<f64>) -> String {
@@ -506,7 +796,7 @@ mod rtss {
             if self.header().version >= RTSS_VERSION_2_7
                 && self.header().osd_entry_size as usize >= OSD_EX_OFFSET + OSD_EX_SIZE
             {
-                write_cstr(unsafe { entry.add(OSD_EX_OFFSET) }, OSD_EX_SIZE, text);
+                write_cstr(unsafe { entry.add(OSD_EX_OFFSET) }, OSD_EX_SIZE, &[]);
             }
         }
 
@@ -615,15 +905,48 @@ mod tests {
             gpu_usage_pct: Some(91),
             gpu_temp_c: Some(72.0),
             waste_mb: 8840.0,
+            hud: OverlayHudConfig::default(),
         });
 
-        assert!(text.contains("CPM LIVE"));
+        assert!(text.contains("Cyberpunk 2077"));
         assert!(text.contains("FPS  61"));
         assert!(text.contains("AVG  59"));
         assert!(text.contains("1%L  44"));
-        assert!(text.contains("FT 16.4ms"));
-        assert!(text.contains("00:02:05  ODRV balanced"));
-        assert!(text.contains("Cyberpunk 2077"));
+        assert!(text.contains("FT 16.4 ms"));
+        assert!(text.contains("00:02:05  ODRV balanced  LIVE"));
+        assert!(text.contains("GPU  91% 72C"));
+        assert!(text.contains("CPU  22%"));
+    }
+
+    #[test]
+    fn overlay_text_should_apply_compact_layout_without_optional_details() {
+        let mut snapshot = OverlaySnapshot::armed(OverlayBackend::Rtss);
+        snapshot.enabled = true;
+        snapshot.game_name = Some("Cyberpunk 2077".to_string());
+        snapshot.fps = Some(33.0);
+        snapshot.frame_time_ms = Some(30.3);
+        snapshot.hud.layout = OverlayLayout::Compact;
+        snapshot.hud.show_frame_stats = false;
+        snapshot.hud.show_waste = false;
+
+        let text = format_overlay_text(&snapshot);
+
+        assert!(text.contains("FPS  33  FT 30.3 ms"));
+        assert!(!text.contains("AVG"));
+        assert!(!text.contains("WASTE"));
+    }
+
+    #[test]
+    fn overlay_text_should_include_debug_target_when_enabled() {
+        let mut snapshot = OverlaySnapshot::armed(OverlayBackend::Rtss);
+        snapshot.enabled = true;
+        snapshot.hud.layout = OverlayLayout::Debug;
+        snapshot.hud.show_target = true;
+        snapshot.process_name = Some("Cyberpunk2077.exe".to_string());
+
+        let text = format_overlay_text(&snapshot);
+
+        assert!(text.contains("TARGET Cyberpunk2077.exe"));
     }
 
     #[test]
@@ -631,13 +954,14 @@ mod tests {
         let mut snapshot = OverlaySnapshot::armed(OverlayBackend::Rtss);
         snapshot.enabled = true;
         snapshot.game_name = Some("Cyberpunk 2077".to_string());
+        snapshot.process_name = Some("Cyberpunk2077.exe".to_string());
         snapshot.frame_status = "RTSS waiting fresh frames for Cyberpunk2077.exe".to_string();
 
         let text = format_overlay_text(&snapshot);
 
-        assert!(text.contains("CPM SYNC"));
+        assert!(text.contains("Cyberpunk 2077"));
         assert!(text.contains("FPS SYNC"));
-        assert!(text.contains("waiting frames Cyberpunk2077"));
+        assert!(text.contains("Cyberpunk2077.exe"));
         assert!(!text.contains("AVG ---"));
     }
 
@@ -649,7 +973,7 @@ mod tests {
 
         let text = format_overlay_text(&snapshot);
 
-        assert!(text.contains("SAFE Overdrive FPS collapse"));
+        assert!(text.contains("GUARD Overdrive FPS collapse"));
     }
 
     #[test]
@@ -677,6 +1001,7 @@ mod tests {
             gpu_usage_pct: Some(100),
             gpu_temp_c: Some(88.0),
             waste_mb: 12_345.0,
+            hud: OverlayHudConfig::default(),
         });
 
         assert!(text.len() < 255, "{text}");

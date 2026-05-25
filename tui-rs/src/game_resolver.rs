@@ -16,6 +16,7 @@ const LAUNCHER_PROCESS_NAMES: &[&str] = &[
     "eadesktop.exe",
     "ealauncher.exe",
     "origin.exe",
+    "redprelauncher.exe",
     "redlauncher.exe",
     "rockstarlauncher.exe",
     "rockstarservice.exe",
@@ -31,6 +32,7 @@ const NOISE_PROCESS_NAMES: &[&str] = &[
     "codex.exe",
     "crashhandler.exe",
     "crashpad_handler.exe",
+    "crashreporter.exe",
     "discord.exe",
     "dropbox.exe",
     "explorer.exe",
@@ -46,6 +48,7 @@ const NOISE_PROCESS_NAMES: &[&str] = &[
     "amdrssrv.exe",
     "radeonsoftware.exe",
     "nvcontainer.exe",
+    "redengineerrorreporter.exe",
     "steam.exe",
     "steamerrorreporter.exe",
     "steamservice.exe",
@@ -56,7 +59,9 @@ const NOISE_PROCESS_NAMES: &[&str] = &[
 const GENERIC_HELPER_TERMS: &[&str] = &[
     "bootstrap",
     "config",
-    "crash",
+    "crashhandler",
+    "crashreporter",
+    "errorreporter",
     "helper",
     "installer",
     "launcher",
@@ -79,6 +84,24 @@ pub(crate) struct GameProcessResolver {
 pub(crate) struct ResolvedCandidate {
     pub(crate) process_name: String,
     pub(crate) score: i32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FrameCandidateDecision {
+    Accepted,
+    Probing,
+    Watching,
+    Rejected,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct FrameCandidateDiagnostic {
+    pub(crate) process_name: String,
+    pub(crate) decision: FrameCandidateDecision,
+    pub(crate) score: i32,
+    pub(crate) frame_samples: usize,
+    pub(crate) memory_mb: Option<f64>,
+    pub(crate) reason: String,
 }
 
 impl GameProcessResolver {
@@ -143,16 +166,15 @@ impl GameProcessResolver {
         state: &SystemState,
     ) -> Option<String> {
         let process_name = metrics.process_name.as_deref()?;
-        if is_rejected_process(process_name) || self.is_blocked(process_name) {
-            return None;
-        }
-
         let normalized = normalize_process_name(process_name);
         let frame_count = {
             let count = self.frame_counts.entry(normalized.clone()).or_default();
             *count += 1;
             *count
         };
+        if is_rejected_process(process_name) || self.is_blocked(process_name) {
+            return None;
+        }
 
         let group = find_process_group(state, process_name);
         let score = score_process(
@@ -166,6 +188,52 @@ impl GameProcessResolver {
 
         (frame_count >= REQUIRED_FRAME_SAMPLES && score >= REQUIRED_FRAME_SCORE)
             .then(|| process_name.to_string())
+    }
+
+    pub(crate) fn diagnostics(
+        &self,
+        game: &SteamGame,
+        state: &SystemState,
+    ) -> Vec<FrameCandidateDiagnostic> {
+        let mut names = HashSet::new();
+
+        for (name, group) in all_processes(state) {
+            let frame_count = self.frame_count(name);
+            if frame_count > 0 || process_is_relevant_to_game(name, Some(group), game) {
+                names.insert(name.clone());
+            }
+        }
+
+        names.extend(self.frame_counts.keys().cloned());
+
+        let mut diagnostics = names
+            .into_iter()
+            .map(|name| {
+                let frame_count = self.frame_count(&name);
+                let group = find_process_group_case_insensitive(state, &name);
+                let score =
+                    score_process(&name, group, game, &self.baseline_processes, frame_count);
+                let (decision, reason) = self.candidate_decision(&name, score, frame_count);
+
+                FrameCandidateDiagnostic {
+                    process_name: name,
+                    decision,
+                    score,
+                    frame_samples: frame_count,
+                    memory_mb: group.map(|group| group.memory_mb),
+                    reason,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        diagnostics.sort_by(|a, b| {
+            decision_rank(a.decision)
+                .cmp(&decision_rank(b.decision))
+                .then_with(|| b.score.cmp(&a.score))
+                .then_with(|| b.frame_samples.cmp(&a.frame_samples))
+                .then_with(|| a.process_name.cmp(&b.process_name))
+        });
+        diagnostics
     }
 
     fn update_best_from_state(&mut self, game: &SteamGame, state: &SystemState) {
@@ -209,6 +277,63 @@ impl GameProcessResolver {
         self.blocked_processes
             .contains(&normalize_process_name(process_name))
     }
+
+    fn frame_count(&self, process_name: &str) -> usize {
+        self.frame_counts
+            .get(&normalize_process_name(process_name))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn candidate_decision(
+        &self,
+        process_name: &str,
+        score: i32,
+        frame_count: usize,
+    ) -> (FrameCandidateDecision, String) {
+        if self.is_blocked(process_name) {
+            return (
+                FrameCandidateDecision::Rejected,
+                "stale target blocked".to_string(),
+            );
+        }
+        if let Some(reason) = rejection_reason(process_name) {
+            return (FrameCandidateDecision::Rejected, reason.to_string());
+        }
+        if frame_count >= REQUIRED_FRAME_SAMPLES && score >= REQUIRED_FRAME_SCORE {
+            return (
+                FrameCandidateDecision::Accepted,
+                "RTSS frames + Steam path".to_string(),
+            );
+        }
+        if self
+            .best
+            .as_ref()
+            .is_some_and(|best| best.process_name.eq_ignore_ascii_case(process_name))
+        {
+            return (
+                FrameCandidateDecision::Probing,
+                "best match so far".to_string(),
+            );
+        }
+        if score >= REQUIRED_DIRECT_SCORE {
+            return (
+                FrameCandidateDecision::Probing,
+                "strong Steam path match".to_string(),
+            );
+        }
+        if frame_count > 0 {
+            return (
+                FrameCandidateDecision::Probing,
+                "RTSS frames below threshold".to_string(),
+            );
+        }
+
+        (
+            FrameCandidateDecision::Watching,
+            "Steam install match".to_string(),
+        )
+    }
 }
 
 pub(crate) fn discovery_exclusions() -> Vec<String> {
@@ -220,13 +345,7 @@ pub(crate) fn discovery_exclusions() -> Vec<String> {
 }
 
 pub(crate) fn is_rejected_process(process_name: &str) -> bool {
-    let normalized = normalize_process_name(process_name);
-    is_unknown_process_name(&normalized)
-        || is_exact_match(&normalized, LAUNCHER_PROCESS_NAMES)
-        || is_exact_match(&normalized, NOISE_PROCESS_NAMES)
-        || GENERIC_HELPER_TERMS
-            .iter()
-            .any(|term| normalized.contains(term))
+    rejection_reason(process_name).is_some()
 }
 
 fn is_unknown_process_name(process_name: &str) -> bool {
@@ -278,10 +397,7 @@ fn score_process(
     if is_exact_match(&normalized, NOISE_PROCESS_NAMES) {
         score -= 120;
     }
-    if GENERIC_HELPER_TERMS
-        .iter()
-        .any(|term| normalized.contains(term))
-    {
+    if matches_helper_term(&normalized) {
         score -= 70;
     }
 
@@ -302,12 +418,73 @@ fn find_process_group<'a>(state: &'a SystemState, process_name: &str) -> Option<
         .or_else(|| state.hidden_processes.get(process_name))
 }
 
+fn find_process_group_case_insensitive<'a>(
+    state: &'a SystemState,
+    process_name: &str,
+) -> Option<&'a ProcessGroup> {
+    find_process_group(state, process_name).or_else(|| {
+        all_processes(state)
+            .find(|(name, _)| name.eq_ignore_ascii_case(process_name))
+            .map(|(_, group)| group)
+    })
+}
+
 fn is_exact_match(process_name: &str, matches: &[&str]) -> bool {
     matches.contains(&process_name)
 }
 
+fn rejection_reason(process_name: &str) -> Option<&'static str> {
+    let normalized = normalize_process_name(process_name);
+    if is_unknown_process_name(&normalized) {
+        return Some("unknown RTSS entry");
+    }
+    if is_exact_match(&normalized, LAUNCHER_PROCESS_NAMES) {
+        return Some("launcher/helper");
+    }
+    if is_exact_match(&normalized, NOISE_PROCESS_NAMES) {
+        return Some(
+            if normalized.contains("reporter") || normalized.contains("crash") {
+                "reporter/crash helper"
+            } else {
+                "background/system noise"
+            },
+        );
+    }
+    if matches_helper_term(&normalized) {
+        return Some("helper process");
+    }
+    None
+}
+
 fn normalize_process_name(process_name: &str) -> String {
     process_name.trim().to_ascii_lowercase()
+}
+
+fn matches_helper_term(process_name: &str) -> bool {
+    let stem = process_name.strip_suffix(".exe").unwrap_or(process_name);
+    GENERIC_HELPER_TERMS.iter().any(|term| {
+        stem == *term || stem.ends_with(term) || (*term == "unins" && stem.starts_with("unins"))
+    })
+}
+
+fn process_is_relevant_to_game(
+    process_name: &str,
+    group: Option<&ProcessGroup>,
+    game: &SteamGame,
+) -> bool {
+    process_name_matches_game(process_name, &game.name)
+        || group
+            .and_then(|group| group.exe_path.as_deref())
+            .is_some_and(|path| is_inside_install_dir(path, &game.install_dir))
+}
+
+fn decision_rank(decision: FrameCandidateDecision) -> u8 {
+    match decision {
+        FrameCandidateDecision::Accepted => 0,
+        FrameCandidateDecision::Probing => 1,
+        FrameCandidateDecision::Watching => 2,
+        FrameCandidateDecision::Rejected => 3,
+    }
 }
 
 fn is_inside_install_dir(exe_path: &str, install_dir: &Path) -> bool {
@@ -412,6 +589,85 @@ mod tests {
         };
 
         assert!(resolver.observe_frame(&metrics, &game, &state).is_none());
+    }
+
+    #[test]
+    fn resolver_should_ignore_redengine_error_reporter() {
+        let game = game();
+        let state = state_with(
+            "REDengineErrorReporter.exe",
+            r"D:\SteamLibrary\steamapps\common\Cyberpunk 2077\bin\x64\REDengineErrorReporter.exe",
+            300.0,
+        );
+        let mut resolver = GameProcessResolver::default();
+        resolver.start(&game, &SystemState::empty_for_test());
+
+        let metrics = FrameMetrics {
+            process_name: Some("REDengineErrorReporter.exe".to_string()),
+            ..FrameMetrics::idle()
+        };
+
+        assert!(resolver.observe_frame(&metrics, &game, &state).is_none());
+        assert!(is_rejected_process("REDengineErrorReporter.exe"));
+    }
+
+    #[test]
+    fn diagnostics_should_explain_rejected_and_accepted_candidates() {
+        let game = game();
+        let mut state = state_with(
+            "Cyberpunk2077.exe",
+            r"D:\SteamLibrary\steamapps\common\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe",
+            4_000.0,
+        );
+        state.observed_processes.insert(
+            "REDengineErrorReporter.exe".to_string(),
+            ProcessGroup {
+                count: 1,
+                memory_mb: 300.0,
+                exe_path: Some(
+                    r"D:\SteamLibrary\steamapps\common\Cyberpunk 2077\bin\x64\REDengineErrorReporter.exe"
+                        .to_string(),
+                ),
+            },
+        );
+        let mut resolver = GameProcessResolver::default();
+        resolver.start(&game, &SystemState::empty_for_test());
+
+        for process_name in [
+            "Cyberpunk2077.exe",
+            "Cyberpunk2077.exe",
+            "Cyberpunk2077.exe",
+            "REDengineErrorReporter.exe",
+        ] {
+            let metrics = FrameMetrics {
+                process_name: Some(process_name.to_string()),
+                ..FrameMetrics::idle()
+            };
+            let _ = resolver.observe_frame(&metrics, &game, &state);
+        }
+
+        let diagnostics = resolver.diagnostics(&game, &state);
+        let game_candidate = diagnostics
+            .iter()
+            .find(|candidate| candidate.process_name == "Cyberpunk2077.exe")
+            .expect("game candidate should be present");
+        let reporter_candidate = diagnostics
+            .iter()
+            .find(|candidate| candidate.process_name == "REDengineErrorReporter.exe")
+            .expect("reporter candidate should be present");
+
+        assert_eq!(game_candidate.decision, FrameCandidateDecision::Accepted);
+        assert_eq!(
+            reporter_candidate.decision,
+            FrameCandidateDecision::Rejected
+        );
+        assert!(reporter_candidate.reason.contains("reporter"));
+    }
+
+    #[test]
+    fn resolver_should_not_reject_game_names_that_contain_helper_words() {
+        assert!(!is_rejected_process("CrashBandicoot4.exe"));
+        assert!(!is_rejected_process("ConfigurableAdventure.exe"));
     }
 
     #[test]

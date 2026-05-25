@@ -8,6 +8,35 @@ use std::time::{Duration, Instant};
 use crate::metrics::format_duration;
 use crate::system::SystemState;
 
+const STEAM_HELPER_PROCESS_NAMES: &[&str] = &[
+    "2klauncher.exe",
+    "crashhandler.exe",
+    "crashpad_handler.exe",
+    "crashreporter.exe",
+    "eabackgroundservice.exe",
+    "eadesktop.exe",
+    "ealauncher.exe",
+    "origin.exe",
+    "redengineerrorreporter.exe",
+    "redlauncher.exe",
+    "redprelauncher.exe",
+    "rockstarlauncher.exe",
+    "socialclubhelper.exe",
+    "steamerrorreporter.exe",
+    "ubisoftconnect.exe",
+    "upc.exe",
+];
+
+const STEAM_HELPER_SUFFIXES: &[&str] = &[
+    "crashhandler",
+    "crashreporter",
+    "errorreporter",
+    "helper",
+    "launcher",
+    "patcher",
+    "updater",
+];
+
 #[derive(Clone)]
 pub(crate) struct SteamGame {
     pub(crate) app_id: String,
@@ -139,6 +168,9 @@ impl SteamLibrary {
             .iter()
             .chain(state.hidden_processes.iter())
             .filter_map(|(process_name, group)| {
+                if is_steam_helper_process(process_name) {
+                    return None;
+                }
                 let exe_path = group.exe_path.as_deref()?;
                 let (game, _) = match_game_by_exe_path(&self.games, exe_path)?;
                 Some(RunningSteamGame {
@@ -235,6 +267,18 @@ fn path_is_inside_dir(path: &str, dir: &str) -> bool {
         || path
             .strip_prefix(dir)
             .is_some_and(|rest| rest.starts_with('/'))
+}
+
+fn is_steam_helper_process(process_name: &str) -> bool {
+    let normalized = process_name.trim().to_ascii_lowercase();
+    if STEAM_HELPER_PROCESS_NAMES.contains(&normalized.as_str()) {
+        return true;
+    }
+
+    let stem = normalized.strip_suffix(".exe").unwrap_or(&normalized);
+    STEAM_HELPER_SUFFIXES
+        .iter()
+        .any(|suffix| stem == *suffix || stem.ends_with(suffix))
 }
 
 pub(crate) fn spawn_steam_scan() -> Receiver<SteamScanResult> {
@@ -566,6 +610,50 @@ mod tests {
             .expect("running process should be detected");
 
         assert_eq!(running.process_name, "NeonRunner.exe");
+    }
+
+    #[test]
+    fn running_process_for_app_should_ignore_launchers_and_reporters() {
+        let mut state = crate::system::SystemState::empty_for_test();
+        state.observed_processes.insert(
+            "REDengineErrorReporter.exe".to_string(),
+            crate::system::ProcessGroup {
+                count: 1,
+                memory_mb: 300.0,
+                exe_path: Some(
+                    r"D:\SteamLibrary\steamapps\common\Cyberpunk 2077\bin\x64\REDengineErrorReporter.exe"
+                        .to_string(),
+                ),
+            },
+        );
+        state.observed_processes.insert(
+            "Cyberpunk2077.exe".to_string(),
+            crate::system::ProcessGroup {
+                count: 1,
+                memory_mb: 4_000.0,
+                exe_path: Some(
+                    r"D:\SteamLibrary\steamapps\common\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe"
+                        .to_string(),
+                ),
+            },
+        );
+        let library = SteamLibrary {
+            games: vec![SteamGame {
+                app_id: "1091500".to_string(),
+                name: "Cyberpunk 2077".to_string(),
+                install_dir: PathBuf::from(r"D:\SteamLibrary\steamapps\common\Cyberpunk 2077"),
+                library_dir: PathBuf::from(r"D:\SteamLibrary"),
+            }],
+            selected: 0,
+            status: String::new(),
+            scanning: false,
+        };
+
+        let running = library
+            .running_process_for_app("1091500", &state)
+            .expect("real game process should be detected");
+
+        assert_eq!(running.process_name, "Cyberpunk2077.exe");
     }
 
     #[test]

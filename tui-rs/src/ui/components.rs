@@ -334,6 +334,25 @@ pub(super) fn localized_config_status(status: &str, language: Language) -> Strin
             Language::English => status.to_string(),
         };
     }
+    if let Some(state) = status.strip_prefix("overlay runtime: ") {
+        return match (language, state) {
+            (Language::Spanish, "enabled") => "overlay runtime: activo".to_string(),
+            (Language::Spanish, "disabled") => "overlay runtime: apagado".to_string(),
+            _ => status.to_string(),
+        };
+    }
+    if let Some(layout) = status.strip_prefix("overlay hud: layout ") {
+        return match language {
+            Language::Spanish => format!("HUD overlay: preset {layout}"),
+            Language::English => status.to_string(),
+        };
+    }
+    if let Some(rest) = status.strip_prefix("overlay hud: ") {
+        return match language {
+            Language::Spanish => format!("HUD overlay: {rest}"),
+            Language::English => status.to_string(),
+        };
+    }
     status.to_string()
 }
 

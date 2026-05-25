@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::io;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -35,6 +36,19 @@ struct RtssSample {
     rtss_frames: u32,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct RtssDiagnosticEntry {
+    slot: u32,
+    process_id: u32,
+    process_name: Option<String>,
+    raw_name_is_path: bool,
+    fps: Option<f64>,
+    frame_time_ms: Option<f64>,
+    time_delta_ms: u32,
+    frames: u32,
+    status: String,
+}
+
 impl FrameMetrics {
     pub(crate) fn idle() -> Self {
         Self {
@@ -56,6 +70,21 @@ impl FrameMetrics {
     }
 }
 
+fn canonical_rtss_process_name(value: &str) -> Option<String> {
+    let trimmed = value
+        .trim()
+        .trim_matches(|ch| ch == '<' || ch == '>' || ch == '"' || ch == '\'');
+    let basename = trimmed.rsplit(['\\', '/']).next().unwrap_or(trimmed).trim();
+    (!basename.is_empty()).then(|| basename.to_string())
+}
+
+fn process_names_match(left: &str, right: &str) -> bool {
+    left.eq_ignore_ascii_case(right)
+        || canonical_rtss_process_name(left)
+            .zip(canonical_rtss_process_name(right))
+            .is_some_and(|(left, right)| left.eq_ignore_ascii_case(&right))
+}
+
 pub(crate) fn probe_frame_backend() -> FrameProbe {
     match rtss::RtssFrameReader::open() {
         Ok(_) => FrameProbe {
@@ -69,6 +98,98 @@ pub(crate) fn probe_frame_backend() -> FrameProbe {
             status,
         },
     }
+}
+
+pub(crate) fn run_rtss_dump() -> io::Result<()> {
+    println!("{}", rtss_dump_report());
+    Ok(())
+}
+
+fn rtss_dump_report() -> String {
+    match rtss::read_diagnostic_entries() {
+        Ok(entries) => render_rtss_dump_report(entries),
+        Err(error) => [
+            format!("Chaos Game Mode RTSS dump v{}", env!("CARGO_PKG_VERSION")),
+            "status: error".to_string(),
+            format!("error: {error}"),
+            String::new(),
+            "next: keep RTSS open, enable OSD for the game, then run this while the game is visible."
+                .to_string(),
+        ]
+        .join("\n"),
+    }
+}
+
+fn render_rtss_dump_report(entries: Vec<RtssDiagnosticEntry>) -> String {
+    let mut lines = vec![
+        format!("Chaos Game Mode RTSS dump v{}", env!("CARGO_PKG_VERSION")),
+        "status: ok".to_string(),
+        format!("entries: {}", entries.len()),
+        String::new(),
+    ];
+
+    if entries.is_empty() {
+        lines.push("No active RTSS app entries found.".to_string());
+        lines.push("Run this while the game is open and RTSS OSD is enabled for it.".to_string());
+        return lines.join("\n");
+    }
+
+    lines.push(
+        "slot pid      source name                         fps   ft_ms  frames   dt_ms status"
+            .to_string(),
+    );
+    lines.extend(entries.into_iter().map(rtss_dump_line));
+    lines.push(String::new());
+    lines.push("If Cyberpunk2077.exe is missing here, RTSS is not exposing the game's FPS to Chaos Game Mode.".to_string());
+    lines.push("No local install paths are printed; source=path only means RTSS supplied a full path internally.".to_string());
+    lines.join("\n")
+}
+
+fn rtss_dump_line(entry: RtssDiagnosticEntry) -> String {
+    format!(
+        "{:>4} {:>6}  {:<6} {:<28} {:>5} {:>7} {:>7} {:>7} {}",
+        entry.slot,
+        entry.process_id,
+        if entry.raw_name_is_path {
+            "path"
+        } else {
+            "name"
+        },
+        truncate_dump_field(
+            entry.process_name.as_deref().unwrap_or("<invalid-name>"),
+            28,
+        ),
+        format_optional_fps(entry.fps),
+        format_optional_ms(entry.frame_time_ms),
+        entry.frames,
+        entry.time_delta_ms,
+        entry.status,
+    )
+}
+
+fn truncate_dump_field(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+
+    let mut shortened = value
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect::<String>();
+    shortened.push('~');
+    shortened
+}
+
+fn format_optional_fps(value: Option<f64>) -> String {
+    value
+        .map(|value| format!("{:.0}", value.round().clamp(0.0, 999.0)))
+        .unwrap_or_else(|| "---".to_string())
+}
+
+fn format_optional_ms(value: Option<f64>) -> String {
+    value
+        .map(|value| format!("{:.1}", value.clamp(0.0, 999.9)))
+        .unwrap_or_else(|| "--.-".to_string())
 }
 
 pub(crate) fn spawn_frame_capture(process_name: String) -> Receiver<FrameMetrics> {
@@ -258,7 +379,7 @@ fn percentile(values: impl Iterator<Item = f64>, percentile: f64) -> Option<f64>
 mod rtss {
     use std::{mem, ptr};
 
-    use super::RtssSample;
+    use super::{RtssDiagnosticEntry, RtssSample};
     use windows_sys::Win32::Foundation::{CloseHandle, ERROR_FILE_NOT_FOUND, GetLastError, HANDLE};
     use windows_sys::Win32::System::Memory::{
         FILE_MAP_READ, MEMORY_MAPPED_VIEW_ADDRESS, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile,
@@ -352,6 +473,12 @@ mod rtss {
                 .collect()
         }
 
+        fn diagnostic_entries(&self) -> Vec<RtssDiagnosticEntry> {
+            (0..self.header().app_arr_size)
+                .filter_map(|slot| self.diagnostic_entry(slot))
+                .collect()
+        }
+
         fn sample(&self, slot: u32) -> Option<RtssSample> {
             let entry =
                 unsafe { ptr::read_unaligned(self.entry_ptr(slot) as *const RtssAppEntryPrefix) };
@@ -359,7 +486,7 @@ mod rtss {
                 return None;
             }
 
-            let process_name = read_cstr(&entry.name)?;
+            let process_name = super::canonical_rtss_process_name(&read_cstr(&entry.name)?)?;
             if !is_valid_name(&process_name) {
                 return None;
             }
@@ -387,6 +514,33 @@ mod rtss {
                 fps,
                 rtss_time1: entry.time1,
                 rtss_frames: entry.frames,
+            })
+        }
+
+        fn diagnostic_entry(&self, slot: u32) -> Option<RtssDiagnosticEntry> {
+            let entry =
+                unsafe { ptr::read_unaligned(self.entry_ptr(slot) as *const RtssAppEntryPrefix) };
+            let raw_name = read_cstr(&entry.name).unwrap_or_default();
+            if entry.process_id == 0 && raw_name.is_empty() {
+                return None;
+            }
+
+            let process_name =
+                super::canonical_rtss_process_name(&raw_name).filter(|name| is_valid_name(name));
+            let (fps, frame_time_ms) = live_frame_values(&entry);
+            let time_delta_ms = entry.time1.saturating_sub(entry.time0);
+            let status = diagnostic_status(process_name.as_deref(), fps, entry.frames);
+
+            Some(RtssDiagnosticEntry {
+                slot,
+                process_id: entry.process_id,
+                process_name,
+                raw_name_is_path: raw_name.contains('\\') || raw_name.contains('/'),
+                fps,
+                frame_time_ms,
+                time_delta_ms,
+                frames: entry.frames,
+                status,
             })
         }
 
@@ -418,11 +572,49 @@ mod rtss {
         Ok(reader
             .samples()
             .into_iter()
-            .find(|sample| sample.process_name.eq_ignore_ascii_case(process_name)))
+            .find(|sample| super::process_names_match(&sample.process_name, process_name)))
     }
 
     pub(super) fn read_all_samples() -> Result<Vec<RtssSample>, String> {
         Ok(RtssFrameReader::open()?.samples())
+    }
+
+    pub(super) fn read_diagnostic_entries() -> Result<Vec<RtssDiagnosticEntry>, String> {
+        Ok(RtssFrameReader::open()?.diagnostic_entries())
+    }
+
+    fn live_frame_values(entry: &RtssAppEntryPrefix) -> (Option<f64>, Option<f64>) {
+        if entry.time1 <= entry.time0 {
+            return (None, None);
+        }
+
+        let fps = if entry.frame_time_us > 0 {
+            Some(1_000_000.0 / f64::from(entry.frame_time_us))
+        } else if entry.frames > 0 {
+            Some(1_000.0 * f64::from(entry.frames) / f64::from(entry.time1 - entry.time0))
+        } else {
+            None
+        }
+        .filter(|fps| fps.is_finite() && *fps > 0.0);
+
+        let frame_time_ms = fps.map(|fps| {
+            if entry.frame_time_us > 0 {
+                f64::from(entry.frame_time_us) / 1_000.0
+            } else {
+                1_000.0 / fps
+            }
+        });
+
+        (fps, frame_time_ms)
+    }
+
+    fn diagnostic_status(process_name: Option<&str>, fps: Option<f64>, frames: u32) -> String {
+        match (process_name, fps, frames) {
+            (None, _, _) => "invalid-name".to_string(),
+            (Some(_), Some(_), _) => "live".to_string(),
+            (Some(_), None, 0) => "no-frames".to_string(),
+            (Some(_), None, _) => "stale/no-fps".to_string(),
+        }
     }
 
     fn read_cstr(value: &[u8]) -> Option<String> {
@@ -449,7 +641,7 @@ mod rtss {
 
 #[cfg(not(windows))]
 mod rtss {
-    use super::RtssSample;
+    use super::{RtssDiagnosticEntry, RtssSample};
 
     pub(super) struct RtssFrameReader;
 
@@ -464,6 +656,10 @@ mod rtss {
     }
 
     pub(super) fn read_all_samples() -> Result<Vec<RtssSample>, String> {
+        Err("RTSS frame capture is only available on Windows".to_string())
+    }
+
+    pub(super) fn read_diagnostic_entries() -> Result<Vec<RtssDiagnosticEntry>, String> {
         Err("RTSS frame capture is only available on Windows".to_string())
     }
 }
@@ -526,5 +722,48 @@ mod tests {
                 })
                 .is_none()
         );
+    }
+
+    #[test]
+    fn canonical_rtss_process_name_should_strip_paths_and_quotes() {
+        assert_eq!(
+            canonical_rtss_process_name(r#""D:\Steam\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe""#)
+                .as_deref(),
+            Some("Cyberpunk2077.exe")
+        );
+    }
+
+    #[test]
+    fn process_names_match_should_compare_executable_basename() {
+        assert!(process_names_match(
+            r"D:\Steam\Cyberpunk 2077\bin\x64\Cyberpunk2077.exe",
+            "Cyberpunk2077.exe"
+        ));
+    }
+
+    #[test]
+    fn rtss_dump_report_should_render_entries_without_local_paths() {
+        let report = render_rtss_dump_report(vec![RtssDiagnosticEntry {
+            slot: 2,
+            process_id: 1234,
+            process_name: Some("Cyberpunk2077.exe".to_string()),
+            raw_name_is_path: true,
+            fps: Some(33.4),
+            frame_time_ms: Some(29.9),
+            time_delta_ms: 10_000,
+            frames: 333,
+            status: "live".to_string(),
+        }]);
+
+        assert!(report.contains("Cyberpunk2077.exe"));
+        assert!(report.contains("source=path"));
+        assert!(!report.contains("SteamLibrary"));
+    }
+
+    #[test]
+    fn rtss_dump_report_should_explain_empty_snapshot() {
+        let report = render_rtss_dump_report(Vec::new());
+
+        assert!(report.contains("No active RTSS app entries found."));
     }
 }
