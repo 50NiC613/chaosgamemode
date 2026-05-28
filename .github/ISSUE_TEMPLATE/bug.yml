@@ -1,0 +1,28 @@
+name: Bug Report
+description: Something is broken
+labels: ["type:bug", "priority:p0"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      value: |
+        - [ ] Bug no longer reproduces
+        - [ ] cargo clippy passes (zero warnings)
+        - [ ] cargo fmt -- --check passes

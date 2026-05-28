@@ -1,0 +1,45 @@
+name: Feature
+description: New functionality or enhancement
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: Add priority:, area:, and milestone labels after creating.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user need does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What will this implement?
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out Of Scope
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      value: |
+        - [ ] cargo clippy passes (zero warnings)
+        - [ ] cargo fmt -- --check passes
+        - [ ] cargo test passes
+        - [ ] Manual walkthrough confirms behavior

@@ -12,6 +12,7 @@ The app is written in Rust with Ratatui. It is designed for a second monitor: de
 - [Español](#espanol)
 - [Development](#development)
 - [GitHub Releases](#github-releases)
+- [Contributing](docs/onboarding.md)
 
 ## English
 
@@ -640,4 +641,4 @@ Run the MSI or use .\install.ps1 from the repository.
 
 ## License
 
-No license has been declared yet. Add one before accepting external contributions or publishing official releases.
+Released under the [MIT License](LICENSE).
